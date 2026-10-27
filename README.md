@@ -35,18 +35,18 @@ It is written to **complement, not replace, the existing [XDA H726 root guide](h
 
 - **SoC:** Allwinner H726 (`sun50iw15p1`), FEL SoC id `0x1911`, FEL USB `1f3a:efe8`
 - **CPU:** Quad-core ARM Cortex-A53
-- **GPU:** ARM Mali (exact model not confirmed on this unit)
+- **GPU:** ARM Mali-G31 (OpenGL ES 3.2, driver `r20p0`; from SurfaceFlinger on this unit)
 - **RAM:** ~1 GB (low-RAM device; `ActivityManager.isLowRamDevice = true`)
-- **Storage:** ~8 GB eMMC (`mmcblk0`, ~7.3 GB usable)
+- **Storage:** eMMC (`/dev/block/mmcblk0`); total capacity not precisely measured on this unit
 - **Gravity sensor:** MPU-6880 (drives auto-keystone; reports z < 0 when inverted)
 - **Display:** 720p native (`1280x720`), LED projector optics
-- **Wireless:** Wi-Fi 6 (802.11ax, 5 GHz) + Bluetooth (controller IC not confirmed)
+- **Wireless:** Wi-Fi + Bluetooth via an **AIC (Aicsemi AIC8800-family)** combo chip (`rwnx` driver, `persist.log.tag.wlan_vendor = aic`); the exact 802.11 standard and bands are **not confirmed**
 - **Operating System:** Android 14 (API 34), Magcubic build `Projector_20250806.111734`
 - **Userspace ABI:** 32-bit `armeabi-v7a` (many 64-bit-only / Play-certified APKs will not install)
 - **Partition Layout:** A/B slots with `init_boot`, dynamic `super`; `verifiedbootstate = orange`, verity disabled; per-unit colour/keystone calibration lives on a reserve partition that stock flashing skips
-- **Identity strings:** `ro.product.model = ADT-3`, aliases HY300 Ultra / Pro / Plus / MAX, SKU `AC1076`
+- **Identity strings:** `ro.product.model = ADT-3`, `ro.product.board = h726-p2`, retail aliases HY300 Ultra / Pro / Plus / MAX (the Wi-Fi AP name defaults to `HY300 Ultra Pro Max`), retail SKU `AC1076`
 
-> Specifications were obtained by **software probing + FEL**, not a board teardown. IC-level parts (GPU, PMIC, audio amp, Wi-Fi/BT controller) and the exact kernel version are **not yet confirmed** - contributions from a teardown are welcome.
+> Specifications were obtained by **software probing + FEL**, not a board teardown. The GPU (Mali-G31) and the Wi-Fi/BT family (AIC) are read from the running system; the **PMIC, audio amp, exact Wi-Fi model / 802.11 standard, eMMC size and kernel version are not yet confirmed** - contributions from a teardown are welcome.
 
 ## 3. The story: from registers to the install image
 

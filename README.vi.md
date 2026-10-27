@@ -35,18 +35,18 @@ Repo viết để **bổ sung, không thay thế [guide root H726 trên XDA](htt
 
 - **SoC:** Allwinner H726 (`sun50iw15p1`), FEL SoC id `0x1911`, FEL USB `1f3a:efe8`
 - **CPU:** ARM Cortex-A53 4 nhân
-- **GPU:** ARM Mali (chưa xác nhận model trên máy này)
+- **GPU:** ARM Mali-G31 (OpenGL ES 3.2, driver `r20p0`; đọc từ SurfaceFlinger trên máy này)
 - **RAM:** ~1 GB (thiết bị low-RAM; `ActivityManager.isLowRamDevice = true`)
-- **Lưu trữ:** eMMC ~8 GB (`mmcblk0`, dùng được ~7.3 GB)
+- **Lưu trữ:** eMMC (`/dev/block/mmcblk0`); chưa đo chính xác dung lượng trên máy này
 - **Cảm biến trọng lực:** MPU-6880 (điều khiển auto-keystone; báo z < 0 khi úp ngược)
 - **Màn hình:** 720p gốc (`1280x720`), quang học LED
-- **Không dây:** Wi-Fi 6 (802.11ax, 5 GHz) + Bluetooth (chưa xác nhận IC)
+- **Không dây:** Wi-Fi + Bluetooth qua chip combo **AIC (Aicsemi dòng AIC8800)** (driver `rwnx`, `persist.log.tag.wlan_vendor = aic`); chuẩn 802.11 và băng tần chính xác **chưa xác nhận**
 - **Hệ điều hành:** Android 14 (API 34), build Magcubic `Projector_20250806.111734`
 - **Userspace ABI:** 32-bit `armeabi-v7a` (nhiều APK 64-bit / Play-cert sẽ không cài được)
 - **Phân vùng:** A/B slot với `init_boot`, `super` động; `verifiedbootstate = orange`, verity tắt; calibrate màu/keystone theo máy nằm ở partition reserve mà flash stock bỏ qua
-- **Chuỗi định danh:** `ro.product.model = ADT-3`, alias HY300 Ultra / Pro / Plus / MAX, mã `AC1076`
+- **Chuỗi định danh:** `ro.product.model = ADT-3`, `ro.product.board = h726-p2`, alias bán lẻ HY300 Ultra / Pro / Plus / MAX (tên Wi-Fi AP mặc định là `HY300 Ultra Pro Max`), mã SKU bán lẻ `AC1076`
 
-> Thông số lấy bằng **probe phần mềm + FEL**, không phải tháo máy đo. Linh kiện mức IC (GPU, PMIC, amply, chip Wi-Fi/BT) và phiên bản kernel chính xác **chưa xác nhận** - rất hoan nghênh đóng góp từ ai tháo máy.
+> Thông số lấy bằng **probe phần mềm + FEL**, không phải tháo máy đo. GPU (Mali-G31) và dòng chip Wi-Fi/BT (AIC) đọc được từ hệ thống đang chạy; còn **PMIC, amply, model Wi-Fi / chuẩn 802.11 chính xác, dung lượng eMMC và phiên bản kernel thì chưa xác nhận** - rất hoan nghênh đóng góp từ ai tháo máy.
 
 ## 3. Câu chuyện: từ từng thanh ghi tới bản cài image
 

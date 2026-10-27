@@ -6,7 +6,7 @@ How auto-keystone really works on the H726, why it "goes wrong", and the definit
 
 The skew ("inverted trapezoid") is **not** a keystone-property problem; it is **device orientation + projection mode**. For a cylinder-on-gimbal unit that can reach "horizontal" two ways:
 
-1. **Mount it logo-up** so the gravity sensor reads `z > 0` (`cat /sys/devices/platform/prj343x/xyz_data` gives z around `+8400`). Logo-down (`z < 0`) throws the firmware into its "ceiling" branch, which inverts the correction and refuses to save a baseline.
+1. **Mount it logo-up** so the gravity sensor reads `z > 0` (`cat /sys/devices/platform/prj343x/xyz_data` gives a positive z, around `+8192`, i.e. ~1 g, when lying flat and upright). Logo-down (`z < 0`) throws the firmware into its "ceiling" branch, which inverts the correction and refuses to save a baseline.
 2. **Fix the image flip:** `am start -n com.htc.magcubicos/.activity.ProjectActivity`, pick the mode where text is upright (desk, logo-up = mode `0` Front). This calls `factorySetPanelValue(MIRROR, ...)`. `persist.sys.panelvalue` is only a UI cache; `setprop` + reboot does not flip.
 3. **Calibrate:** `am start -n com.htc.magcubicos/.activity.InitAngleActivity`, hold level and still, press OK. `PrjScreen.set_angle_offset()` captures the flat reference and writes the flag `/oem/gsensor_data` (persistent, survives reboot).
 4. **Enable auto:** `setprop persist.sys.tpryauto 1` + `am broadcast -a android.intent.hotack_keystone --ei ratio 1 --ei keystone 1`.
