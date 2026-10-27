@@ -22,7 +22,13 @@ Apply it (see [`../launcher-mods/README.md`](../launcher-mods/README.md)): clone
 
 ## 2. Hub app
 
-[`../hub-app`](../hub-app) is `com.hy300.hub` ("Máy chiếu"): a single-screen launcher of tiles (Lucide-style icons) that consolidates the fragmented vendor settings - projector adjustment / keystone, casting, Wi-Fi, developer options, info. Non-exported targets are launched with a `su -c am start` fallback (grant the Hub root in Magisk once). Build with its own Gradle wrapper (`assembleDebug`).
+[`../hub-app`](../hub-app) is `com.hy300.hub` ("Máy chiếu"): a single-screen launcher of tiles (Lucide-style icons) that consolidates the fragmented vendor settings - projector adjustment / keystone, casting, Wi-Fi, developer options, info. Non-exported targets are launched with a `su -c am start` fallback (grant the Hub root in Magisk once); `pkg` tiles need `QUERY_ALL_PACKAGES` to resolve on Android 11+. The casting tile opens the custom receiver (PhairPlay) rather than the stock cast page, which pushes a third-party app. Build with its own Gradle wrapper (`assembleDebug`).
+
+The Hub also carries its own dark-Material **About screen** (`AboutActivity`) that replaces MagcubicOS's harsh blue one: the same device info in rounded cards, read from system properties and standard APIs, with no software-update rows. It is the first step of moving the user-facing settings onto a consistent Material surface (the vendor projector/keystone screens have no Android equivalent and stay as they are; generic ones like Wi-Fi/Bluetooth can deep-link to Android's own Material settings).
+
+### Hiding the OTA update rows (no app patching)
+
+MagcubicOS's About screen shows two update rows ("software update" and "online update") that launch the already-removed `com.htc.htcotaupdate` / `com.softwinner.update`. Rather than repackage the system settings app, hide them through its own config: the launcher reads `/oem/shortcuts.config` (a writable vfat, preferred over `/system/shortcuts.config`) as JSON, and each About row's visibility is a boolean there. Set `"updateFirmware": false` and `"onlineUpdate": false` (keep a `.bak`), then `am force-stop com.htc.magcubicos` to reload. The same file also filters apps from the launcher and the app manager.
 
 ## 3. Force the custom launcher as HOME
 

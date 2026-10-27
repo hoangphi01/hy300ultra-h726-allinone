@@ -33,11 +33,10 @@ public class MainActivity extends Activity {
         {"ic_aperture",    "Lấy nét",             "cmp", "com.hysd.vafocus/com.hysd.vafocus.VajzActivity"},
         {"ic_wifi",        "WiFi",                          "cmp", "com.htc.magcubicos/com.htc.magcubicos.activity.WifiActivity"},
         {"ic_bluetooth",   "Bluetooth",                     "cmp", "com.htc.magcubicos/com.htc.magcubicos.activity.BluetoothActivity"},
-        {"ic_airplay",     "AirScreen",                     "pkg", "com.ses.screenmirror"},
-        {"ic_screenshare", "Chiếu màn hình", "pkg", "com.htc.samescreen"},
+        {"ic_airplay",     "PhairPlay",                     "pkg", "com.phairplay.googletv"},
         {"ic_cast",        "DLNA",                          "cmp", "com.mphotool.dlna/com.mphotool.dlna.MainActivity"},
         {"ic_code",        "Nhà phát triển", "cmp", "com.htc.magcubicos/com.htc.magcubicos.activity.DeveloperModeActivity"},
-        {"ic_info",        "Thông tin",                "cmp", "com.htc.magcubicos/com.htc.magcubicos.activity.AboutActivity"},
+        {"ic_info",        "Thông tin",                "cmp", "com.hy300.hub/com.hy300.hub.AboutActivity"},
     };
 
     @Override
@@ -130,12 +129,9 @@ public class MainActivity extends Activity {
         String kind = it[2], target = it[3], label = it[1];
         if ("pkg".equals(kind)) {
             Intent i = getPackageManager().getLaunchIntentForPackage(target);
+            if (i == null) i = getPackageManager().getLeanbackLaunchIntentForPackage(target);
             if (i == null) {
-                if ("com.ses.screenmirror".equals(target)) {
-                    startCmp("com.mphotool.airplay", "com.mphotool.airplay.MainActivity", label);
-                } else {
-                    toast("Chưa cài: " + label);
-                }
+                toast("Chưa cài: " + label);
                 return;
             }
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
