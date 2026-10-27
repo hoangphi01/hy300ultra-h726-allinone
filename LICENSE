@@ -31,7 +31,7 @@ Magisk module (magisk-module/), and the documentation (docs/, README).
 
 It does NOT cover, and this repository does NOT redistribute:
 - Allwinner / Magcubic / vendor firmware, APKs, or native libraries (proprietary).
-- The upstream projects this work builds on — each keeps its own license
+- The upstream projects this work builds on - each keeps its own license
   (see References). The launcher is a patch on top of Gathin23/cleanyourtv (MIT).
 - Wallpaper photos referenced by the launcher theme are CC-BY / CC-BY-SA /
   CC0 by their respective authors (see the theme's CREDITS, linked in docs).

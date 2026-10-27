@@ -1,4 +1,4 @@
-# 03 — Keystone / auto-keystone / display subsystem (H726 reverse-engineering)
+# 03 - Keystone / auto-keystone / display subsystem (H726 reverse-engineering)
 
 > Full Vietnamese RE notes: [`vi/keystone-h726.md`](vi/keystone-h726.md). This page is the distilled English version: how auto-keystone really works on the H726, why it "goes wrong", and the **definitive fix** (verified, survives reboot). Method: strings + jadx of `MagcubicOS.apk` and `tpjz_allwinner.apk` (`com.hysd.vafocus`), device probing, and the H713 keystone model (`allwinner-h713-linux/.../h713-keystone/model/*.py`) as a near-1:1 reference.
 
@@ -7,7 +7,7 @@
 The skew ("inverted trapezoid") is **not** a keystone-prop problem. It is **device orientation + projection mode**. For a cylinder-on-gimbal unit that can reach "horizontal" two ways:
 
 1. **Mount it LOGO-UP** so the gravity sensor reads **z > 0** (`cat /sys/devices/platform/prj343x/xyz_data` → z ≈ **+8400**). Logo-down (z < 0) throws the firmware into its "ceiling" branch which **inverts** the correction and **refuses to save a baseline**.
-2. **Fix the image flip:** `am start -n com.htc.magcubicos/.activity.ProjectActivity` → pick the mode where text is upright (desk, logo-up = **mode 0 Front**). This calls `factorySetPanelValue(MIRROR, …)`. `persist.sys.panelvalue` is only a UI cache — `setprop` + reboot does **not** flip.
+2. **Fix the image flip:** `am start -n com.htc.magcubicos/.activity.ProjectActivity` → pick the mode where text is upright (desk, logo-up = **mode 0 Front**). This calls `factorySetPanelValue(MIRROR, …)`. `persist.sys.panelvalue` is only a UI cache - `setprop` + reboot does **not** flip.
 3. **Calibrate:** `am start -n com.htc.magcubicos/.activity.InitAngleActivity` → hold level & still → **OK** → `PrjScreen.set_angle_offset()` captures the flat reference and writes the flag **`/oem/gsensor_data`** (persistent → survives reboot).
 4. **Enable auto:** `setprop persist.sys.tpryauto 1` + `am broadcast -a android.intent.hotack_keystone --ei ratio 1 --ei keystone 1`.
 
@@ -27,7 +27,7 @@ libduRYXtp.so: getRYXRatiomapDate → 8 corner insets
 KeystoneUtils_726  →  DRM/KMS homography on the GPU (SurfaceFlinger), NOT a hardware warp
 ```
 
-The correction is a **GPU homography** composited in SurfaceFlinger — there is **no display co-processor** on H726 (unlike H713's MIPS `display.bin`).
+The correction is a **GPU homography** composited in SurfaceFlinger - there is **no display co-processor** on H726 (unlike H713's MIPS `display.bin`).
 
 ## Two separate keystone paths (the big finding)
 
@@ -38,15 +38,15 @@ At a 15° tilt the auto-correction is clearly applied, yet `persist.htc.keystone
 | **AUTO** (gsensor) | `optKeystoneFun` → `KeystoneUtils_726` → DE/native | tracked via `persist.sys.keystoneAngle` / `keystonefinalAngle`; **does not touch** `persist.htc.keystone.*` |
 | **MANUAL** (4-corner) | `CorrectionActivity` / `vafocus/.TchhdActivity` | writes `persist.htc.keystone.{ltx,lty,rtx,rty,lbx,lby,rbx,rby}` |
 
-`persist.display.keystone_*` is the "accepted/clamp" copy. ⇒ Writing `htc.keystone` **while auto is on** gets overwritten by the DE path — which is exactly why manual values only "sometimes" stuck.
+`persist.display.keystone_*` is the "accepted/clamp" copy. ⇒ Writing `htc.keystone` **while auto is on** gets overwritten by the DE path - which is exactly why manual values only "sometimes" stuck.
 
 ## Baseline mechanism (how calibration is stored)
 
 - Capture = **`PrjScreen.set_angle_offset()`** (a framework method, called by reflection from MagcubicOS; `get_angle_offset()` reads it back). It snapshots the **current gsensor** as the flat reference.
 - Triggered by **`InitAngleActivity`** ("Please place the device on a horizontal surface and press OK… do not move").
 - Persisted as the flag file **`/oem/gsensor_data`** (the `/oem` partition survives reboot).
-- `checkGsensorDataOk` requires **z ≥ 0** — which is why the device must be **logo-up** when you calibrate; z < 0 is rejected.
-- Note: `Settings.Global/Secure "GsInitXYZ"` is **not** used on this unit (it stays `null`) — that's an H726-vs-H713 difference.
+- `checkGsensorDataOk` requires **z ≥ 0** - which is why the device must be **logo-up** when you calibrate; z < 0 is rejected.
+- Note: `Settings.Global/Secure "GsInitXYZ"` is **not** used on this unit (it stays `null`) - that's an H726-vs-H713 difference.
 
 ## Projection-mode / image-flip control
 
@@ -71,13 +71,13 @@ At a 15° tilt the auto-correction is clearly applied, yet `persist.htc.keystone
 |---|---|---|
 | FEL SoC id | `0x1860` | **`0x1911`** |
 | Display co-proc | **MIPS `display.bin`** (`/dev/mipsloader`) | **none** → DRM/KMS direct (`/dev/sunxi_drm_heap`) |
-| gsensor | SC7A20 | **MPU-6880** (reports z < 0 when inverted — the gotcha) |
+| gsensor | SC7A20 | **MPU-6880** (reports z < 0 when inverted - the gotcha) |
 | Baseline store | `GsInitXYZ` (Settings) | **`PrjScreen.set_angle_offset()` → `/oem/gsensor_data`** (GsInitXYZ unused) |
 | Keystone apply | prop / SF txn | **two paths**: auto→`KeystoneUtils_726`→DE; manual→`persist.htc.keystone.*` |
-| Image flip | — | `factorySetPanelValue(MIRROR, 0..3)` via `ProjectActivity` |
+| Image flip | - | `factorySetPanelValue(MIRROR, 0..3)` via `ProjectActivity` |
 | Userspace / libs | arm64 + arm32 | **32-bit armeabi-v7a**; `libduRYXtp.so` (geom) + `libPxScale.so` (zoom) |
-| Keystone util class | — | dedicated **`KeystoneUtils_726`** |
+| Keystone util class | - | dedicated **`KeystoneUtils_726`** |
 
 ## Autofocus (separate from keystone)
 
-UVC camera + stepper motor (`prj_config.ini`: `motor_type`, `motor_step_delay`); `VaFocus=10` hill-climb on sharpness. `vafocus/.TchjzActivity` = camera auto-keystone (needs a flat, well-lit wall). Do **not** uninstall `com.hysd.vafocus` — it is the keystone/focus service, not adware.
+UVC camera + stepper motor (`prj_config.ini`: `motor_type`, `motor_step_delay`); `VaFocus=10` hill-climb on sharpness. `vafocus/.TchjzActivity` = camera auto-keystone (needs a flat, well-lit wall). Do **not** uninstall `com.hysd.vafocus` - it is the keystone/focus service, not adware.

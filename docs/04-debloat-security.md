@@ -1,6 +1,6 @@
-# 04 — Debloat & security (BadBox 2.0 teardown)
+# 04 - Debloat & security (BadBox 2.0 teardown)
 
-> The stock firmware is a white-label clone historically tied to **BigDroidOS / Bigpanzi** and flagged with **BadBox 2.0**: residential-proxy (SOAX), telemetry, silent install, OTA self-reinstall — **firmware-resident, so it survives a factory reset.** Reference: [maximilian-sh/hy350max-badbox-removal](https://github.com/maximilian-sh/hy350max-badbox-removal). Root lets you neutralize the parts that run; a cloned firmware still cannot be fully trusted.
+> The stock firmware is a white-label clone historically tied to **BigDroidOS / Bigpanzi** and flagged with **BadBox 2.0**: residential-proxy (SOAX), telemetry, silent install, OTA self-reinstall - **firmware-resident, so it survives a factory reset.** Reference: [maximilian-sh/hy350max-badbox-removal](https://github.com/maximilian-sh/hy350max-badbox-removal). Root lets you neutralize the parts that run; a cloned firmware still cannot be fully trusted.
 
 ## Malware found & neutralized
 
@@ -8,12 +8,12 @@
 |---|---|---|
 | `com.htc.storeos` | `StoreOs_QZ` dropper | `pm uninstall --user 0` |
 | `com.htc.htcotaupdate` | OTA that reinstalls removed junk | `pm uninstall --user 0` |
-| **`com.android.vending`** | **Fake Play Store = Tubesky** (`/product/priv-app/Tubesky`, signer `F0:FD:6C:5B…` — **not Google**) | `pm uninstall --user 0` · use **Aurora Store** for real Play apps |
-| **`/system/xbin/hotacksu`** | **setuid-root `su` backdoor** (`-rwsr-sr-x root shell`) | see below — bind-mount mask |
+| **`com.android.vending`** | **Fake Play Store = Tubesky** (`/product/priv-app/Tubesky`, signer `F0:FD:6C:5B…` - **not Google**) | `pm uninstall --user 0` · use **Aurora Store** for real Play apps |
+| **`/system/xbin/hotacksu`** | **setuid-root `su` backdoor** (`-rwsr-sr-x root shell`) | see below - bind-mount mask |
 
 ### Neutralizing the `hotacksu` backdoor
 
-`/system` is hard read-only (dm-verity-off but still RO mount), so you can't delete it. Instead **bind-mount an empty, non-executable file over it** (as root, in the global mount namespace — the mask propagates to all processes):
+`/system` is hard read-only (dm-verity-off but still RO mount), so you can't delete it. Instead **bind-mount an empty, non-executable file over it** (as root, in the global mount namespace - the mask propagates to all processes):
 
 ```sh
 printf '' > /dev/.hk_block
@@ -25,9 +25,9 @@ After this, any process that tries to `exec` the backdoor gets *Permission denie
 
 ### Notes
 
-- `/vendor/etc/awbms_config` whitelists the **`com.hotack`** namespace from the task-killer (persistence). That same `hotack` namespace is used by the vendor for **both** keystone (`hotack.vaf.*`, `android.intent.hotack_keystone`) **and** the malware — so don't blanket-kill it.
+- `/vendor/etc/awbms_config` whitelists the **`com.hotack`** namespace from the task-killer (persistence). That same `hotack` namespace is used by the vendor for **both** keystone (`hotack.vaf.*`, `android.intent.hotack_keystone`) **and** the malware - so don't blanket-kill it.
 - GMS = `PrebuiltGmsCorePano` (the standard Android-TV GMS build; likely legitimate).
-- **Magisk magic-mount is broken on this firmware** — `system/` overlays don't apply. Use `/oem`, direct partition writes, or `/data/adb/service.d` instead (that's why the backdoor mask is a bind-mount, not a module overlay).
+- **Magisk magic-mount is broken on this firmware** - `system/` overlays don't apply. Use `/oem`, direct partition writes, or `/data/adb/service.d` instead (that's why the backdoor mask is a bind-mount, not a module overlay).
 
 ## Debloat list (reversible)
 
@@ -47,7 +47,7 @@ com.softwinner.TvdVideo          video player
 com.softwinner.awlivetv          Live TV
 ```
 
-**Keep** (don't remove): `com.hysd.vafocus` (keystone/autofocus — see [`03-keystone-display.md`](03-keystone-display.md)), casting apps (`com.mphotool.airplay`, `com.mphotool.dlna`, `com.htc.samescreen`, `com.softwinner.miracastReceiver`).
+**Keep** (don't remove): `com.hysd.vafocus` (keystone/autofocus - see [`03-keystone-display.md`](03-keystone-display.md)), casting apps (`com.mphotool.airplay`, `com.mphotool.dlna`, `com.htc.samescreen`, `com.softwinner.miracastReceiver`).
 
 ## Hardening
 
