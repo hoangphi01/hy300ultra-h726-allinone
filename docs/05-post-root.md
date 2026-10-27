@@ -50,6 +50,10 @@ This SoC is 32-bit (`armeabi-v7a`); 64-bit-only APKs and the Play-certified YouT
 
 One catch is specific to this SoC: an iPhone mirror came out **stretched horizontally**. The cause is the Allwinner hardware decoder, which scales a 1080-tall source down toward the 720p panel with unequal horizontal/vertical ratios and then reports a distorted crop rectangle (e.g. `484x712` for a true `498x1080` stream); PhairPlay trusted that crop and rendered the wrong aspect. The fix is a one-line change so the receiver keeps the true SPS-parsed size instead of the decoder's crop. Full diagnosis and the build recipe (apktool, local only, not redistributed) are in [`../scripts/phairplay-aspect-fix.md`](../scripts/phairplay-aspect-fix.md). The vendor HDMI-in aspect control, a separate lever, is in [`../scripts/SetAspect.java`](../scripts/SetAspect.java).
 
+### Intermittent self-disconnects (Wi-Fi power save)
+
+Casts also dropped at random and had to be re-started. The receiver's decode path is robust (it drops frames and resyncs rather than tearing down), so the drop comes from the data socket closing, i.e. the sender giving up. The cause is Wi-Fi power save: the **AIC8800** chip has `ps_on=Y` (and the module parameter is read-only at runtime, built into the kernel), while the receiver holds only an mDNS multicast lock, so during a stream the radio can nap and lose packets. The fix is to keep Wi-Fi awake: `cmd wifi force-low-latency-mode enabled` plus a `WIFI_MODE_FULL_LOW_LATENCY` lock held for as long as the device is up. [`../scripts/HoldWifiLock.java`](../scripts/HoldWifiLock.java) acquires that lock from a tiny root daemon (it gets a system `Context` via `ActivityThread`, so it needs no app), and the [hy300tweaks module](../magisk-module/hy300tweaks) starts both at boot and respawns the daemon if it exits. Harmless on a mains-powered projector. A cleaner long-term fix is for the receiver app to hold the lock itself only while a mirror session is active.
+
 ## 7. zram
 
 Already enabled by the firmware (low-RAM device).

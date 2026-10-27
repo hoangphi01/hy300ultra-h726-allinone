@@ -33,3 +33,21 @@ fi
   sleep 15
   am start-foreground-service -n com.phairplay.googletv/com.phairplay.service.PhairPlayService 2>/dev/null
 ) &
+
+# (4) Keep Wi-Fi out of power save while casting. The AIC8800 chip has ps_on=Y (power save
+#     on, and the parameter is read-only at runtime) and the receiver holds only a multicast
+#     lock, so the stream drops intermittently (self-disconnect). Force low-latency mode and
+#     hold a FULL_LOW_LATENCY Wi-Fi lock from a tiny root daemon (scripts/HoldWifiLock.java,
+#     compiled to wifilock.jar with javac -> d8 and placed in this module dir); respawn it if
+#     it exits so the lock is always held. Harmless on a mains-powered projector.
+(
+  while [ "$(getprop sys.boot_completed)" != "1" ]; do
+    sleep 1
+  done
+  sleep 12
+  cmd wifi force-low-latency-mode enabled 2>/dev/null
+  while true; do
+    CLASSPATH=/data/adb/modules/hy300tweaks/wifilock.jar app_process32 /system/bin HoldWifiLock 4 >/dev/null 2>&1
+    sleep 5
+  done
+) &
