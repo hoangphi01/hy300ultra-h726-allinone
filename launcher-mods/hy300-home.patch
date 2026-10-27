@@ -1,0 +1,762 @@
+diff --git a/launcher/app/src/main/AndroidManifest.xml b/launcher/app/src/main/AndroidManifest.xml
+index 701b5feb..a07211fe 100644
+--- a/launcher/app/src/main/AndroidManifest.xml
++++ b/launcher/app/src/main/AndroidManifest.xml
+@@ -9,6 +9,8 @@
+ 
+     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
++    <!-- Current weather for the home header (Open-Meteo, no API key). The only network call the launcher makes. -->
++    <uses-permission android:name="android.permission.INTERNET" />
+     <!-- Needed since Android 10 to read the Wi-Fi network name for the network pill. Never requested at
+          runtime: build-and-install grants it with pm grant, so lint's Android 12 "ask for COARSE with
+          FINE" rule does not apply here. -->
+@@ -62,6 +64,7 @@
+         </intent>
+         <!-- China-market MIUI TV firmware: the Settings and Wi-Fi pills fall back to Xiaomi's settings app.
+              Fire TV: the real settings menu lives in the stock launcher (see settings_fallback_components). -->
++        <package android:name="com.android.tv.settings" />
+         <package android:name="com.xiaomi.mitv.settings" />
+         <package android:name="com.tcl.settings" />
+         <package android:name="com.amazon.tv.launcher" />
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/ClockScene.java b/launcher/app/src/main/java/com/gathin/tvhome/ClockScene.java
+index dd324c91..8f8d7345 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/ClockScene.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/ClockScene.java
+@@ -10,6 +10,7 @@ import android.graphics.drawable.ColorDrawable;
+ import android.graphics.drawable.Drawable;
+ import android.graphics.drawable.GradientDrawable;
+ import android.graphics.drawable.LayerDrawable;
++import android.graphics.drawable.TransitionDrawable;
+ import android.os.Handler;
+ import android.os.Looper;
+ import android.util.DisplayMetrics;
+@@ -17,16 +18,26 @@ import android.view.View;
+ import android.widget.ImageView;
+ 
+ import java.io.File;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
+ import java.util.Random;
+ 
+ /**
+  * The clock screensaver's scene (layout dream_clock): the thin clock and date on black over a slow ambient
+  * glow. Every minute the clock drifts to a new spot and the glow shifts colour, so nothing burns in.
+  * Shared by ClockDream (the system screensaver) and ClockActivity (Home left idle).
++ *
++ * With clock_wallpaper on it becomes a picture frame: Home's rotating wallpapers fill the screen behind the
++ * clock and cross-fade to the next one every {@link #FRAME_MS}. One picture decodes at a time, at screen size
++ * in RGB_565, and the one it replaces is recycled after the fade, so a long idle stays within a frame or two.
+  */
+ final class ClockScene {
+ 
+     private static final long MOVE_MS = 60_000L;
++    /** Picture frame: a new wallpaper every ~22 s, cross-faded over 1.2 s. */
++    private static final long FRAME_MS = 22_000L;
++    private static final int FRAME_FADE_MS = 1200;
+     /** The glow's colour change: 16 steps over 8 s. Animated per frame it redrew the full-screen gradient ~480 times. */
+     private static final int GLOW_STEPS = 16;
+     private static final long GLOW_STEP_MS = 500L;
+@@ -42,10 +53,14 @@ final class ClockScene {
+     private int glowColor;
+     /** clock_wallpaper or clock_glow false: something else (a picture, or plain black) replaced the coloured glow. */
+     private boolean wallpaperShown;
+-    /** clock_wallpaper: the picture start() decodes, its darkening, and the resources to draw it with. */
+-    private File wallpaperFile;
++    /** clock_wallpaper: the pictures to rotate through (one for a single-image theme), their darkening, and the
++     *  resources to draw them with. */
++    private List<File> wallpapers;
++    private int wallpaperIdx = -1;
+     private int wallpaperShade;
+     private Resources wallpaperRes;
++    /** The picture currently on screen; recycled once the next one has faded in. */
++    private Bitmap shownBmp;
+     /** Bumped by stop(): a decode started before it finds a different number and drops its result. Main thread only. */
+     private int wallpaperGeneration;
+ 
+@@ -58,6 +73,15 @@ final class ClockScene {
+         }
+     };
+ 
++    /** Picture frame: advance to the next wallpaper. Separate from the clock's minute tick so photos change faster. */
++    private final Runnable frameTick = new Runnable() {
++        @Override
++        public void run() {
++            showNextPhoto();
++            handler.postDelayed(this, FRAME_MS);
++        }
++    };
++
+     /** root is the inflated dream_clock layout. */
+     ClockScene(View root) {
+         content = root.findViewById(R.id.dreamContent);
+@@ -79,20 +103,30 @@ final class ClockScene {
+         });
+         handler.removeCallbacks(tick);
+         handler.postDelayed(tick, MOVE_MS);
+-        if (wallpaperFile != null && !wallpaperShown) loadWallpaper();
++        if (wallpapers != null && !wallpapers.isEmpty() && !wallpaperShown) {
++            showNextPhoto();                                   // the first picture, right away
++            if (wallpapers.size() > 1) {
++                handler.removeCallbacks(frameTick);
++                handler.postDelayed(frameTick, FRAME_MS);      // then rotate
++            }
++        }
+     }
+ 
+     void stop() {
+-        handler.removeCallbacksAndMessages(null);   // the tick and any glow steps still queued
++        handler.removeCallbacksAndMessages(null);   // the tick, the frame tick and any glow steps still queued
+         content.animate().cancel();
+         wallpaperGeneration++;   // a decode still running must not attach its picture to a stopped scene
++        if (shownBmp != null) {
++            shownBmp.recycle();
++            shownBmp = null;
++        }
+     }
+ 
+     /**
+-     * clock_wallpaper: put Home's wallpaper (the theme's single picture, or the first of its collection) behind
+-     * the clock, darkened by clock_wallpaper_dim, in place of the glow. Decoded off the main thread at screen size
+-     * in RGB_565 (4 MB at 1080p), like Home's own; until then, or if it cannot be read, the glow stays.
+-     * Call before start(), which starts the decode (again after a stop() that dropped an unfinished one).
++     * clock_wallpaper: put Home's wallpapers (the theme's picture, or its whole rotating collection) behind the
++     * clock, darkened by clock_wallpaper_dim, in place of the glow. Decoded off the main thread at screen size in
++     * RGB_565 (about 1.3 MB at 720p), like Home's own; until the first one lands, or if none can be read, the glow
++     * stays. Call before start(), which shows the first picture and begins the rotation.
+      */
+     void useHomeWallpaper(Context ctx) {
+         Config cfg;
+@@ -109,13 +143,21 @@ final class ClockScene {
+             }
+             return;
+         }
+-        wallpaperFile = cfg.wallpaper != null ? cfg.wallpaper : cfg.wallpapers.isEmpty() ? null : cfg.wallpapers.get(0);
++        List<File> list = new ArrayList<>();
++        if (!cfg.wallpapers.isEmpty()) list.addAll(cfg.wallpapers);
++        else if (cfg.wallpaper != null) list.add(cfg.wallpaper);
++        if (list.isEmpty()) return;
++        Collections.shuffle(list);       // a different order each time the screensaver opens
++        wallpapers = list;
+         wallpaperShade = (cfg.clockWallpaperDim * 255 / 100) << 24;
+         wallpaperRes = ctx.getResources();
+     }
+ 
+-    private void loadWallpaper() {
+-        File file = wallpaperFile;
++    /** Decode the next wallpaper off the main thread, then cross-fade it in. */
++    private void showNextPhoto() {
++        if (wallpapers == null || wallpapers.isEmpty()) return;
++        wallpaperIdx = (wallpaperIdx + 1) % wallpapers.size();
++        File file = wallpapers.get(wallpaperIdx);
+         int shade = wallpaperShade;
+         Resources res = wallpaperRes;
+         DisplayMetrics dm = res.getDisplayMetrics();
+@@ -125,18 +167,34 @@ final class ClockScene {
+             Bitmap bmp = decode(file, w, h);
+             if (bmp == null) return;
+             handler.post(() -> {
+-                if (generation != wallpaperGeneration || wallpaperShown) {
+-                    bmp.recycle();   // stopped meanwhile (or already shown): this picture was never attached
++                if (generation != wallpaperGeneration) {
++                    bmp.recycle();   // stopped meanwhile: this picture was never attached
+                     return;
+                 }
+-                wallpaperShown = true;
+-                // As the image, not the background: a background is stretched to the view, so a picture of
+-                // another shape than the screen would be distorted. centerCrop scales and crops it like Home.
+-                ambient.setBackground(null);
+-                ambient.setImageDrawable(new LayerDrawable(new Drawable[]{
+-                        new BitmapDrawable(res, bmp), new ColorDrawable(shade)}));
++                crossfadeTo(res, bmp, shade);
+             });
+-        }, "clock-wallpaper").start();
++        }, "frame-photo").start();
++    }
++
++    /** Swap the picture under the clock, fading from the one on screen. centerCrop fills the screen like Home. */
++    private void crossfadeTo(Resources res, Bitmap bmp, int shade) {
++        Drawable next = new LayerDrawable(new Drawable[]{
++                new BitmapDrawable(res, bmp), new ColorDrawable(shade)});
++        Drawable current = ambient.getDrawable();
++        ambient.setBackground(null);   // drop the glow; the picture takes over
++        if (current == null) {
++            ambient.setImageDrawable(next);
++        } else {
++            TransitionDrawable fade = new TransitionDrawable(new Drawable[]{current, next});
++            fade.setCrossFadeEnabled(true);
++            ambient.setImageDrawable(fade);
++            fade.startTransition(FRAME_FADE_MS);
++        }
++        wallpaperShown = true;
++        Bitmap old = shownBmp;
++        shownBmp = bmp;
++        // Recycle the picture we just replaced, but only once it has finished fading out.
++        if (old != null) handler.postDelayed(old::recycle, FRAME_FADE_MS + 300L);
+     }
+ 
+     /** WallpaperPlayer's decode: sampled and scaled down to cover the screen, never bigger than 4K. */
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
+index 13f181e8..0ae58ccb 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
+@@ -67,6 +67,7 @@ import android.widget.ImageView;
+ import android.widget.LinearLayout;
+ import android.widget.RelativeLayout;
+ import android.widget.PopupWindow;
++import android.widget.TextClock;
+ import android.widget.TextView;
+ import android.widget.Toast;
+ 
+@@ -111,6 +112,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+     private boolean rtlAppGrid;
+     private static final long MINUTE_MS = 60_000L;
+     private static final long STATS_MS = 10_000L;
++    /** Weather refresh while Home is in front: every 30 minutes, plus once on each resume. */
++    private static final long WEATHER_MS = 30 * 60_000L;
+     /**
+      * 2025-01-01. TVs without a clock battery boot at the epoch (08:00 in China) and keep it until network
+      * time arrives; the clock, date and greeting stay hidden before then.
+@@ -190,6 +193,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+     private boolean lunar;
+     private int lunarOffset;
+     private TextView stats;
++    /** show_weather: current weather under the date, from Open-Meteo at weatherLat/weatherLon. */
++    private TextView weather;
++    private boolean showWeather;
++    private double weatherLat, weatherLon;
++    private String weatherLabel;
+     private List<RaceWeekend.Race> raceCalendar;
+     private View racePanel;
+     private TextView raceKicker, raceHeadline, raceSessions;
+@@ -497,6 +505,24 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         lunar = cfg.lunarDate;
+         lunarOffset = Lunar.offsetFor(cfg.lunarUtcOffset, Locale.getDefault());
+         if (lunar) lunarDate.setVisibility(View.VISIBLE);
++        // Second clock for the home time zone (e.g. Vietnam), shown next to the date.
++        TextClock vnClock = findViewById(R.id.vnClock);
++        if (getResources().getBoolean(R.bool.second_clock)) {
++            vnClock.setTimeZone(getString(R.string.second_clock_tz));
++            vnClock.setVisibility(View.VISIBLE);
++        }
++        // Current weather under the date; filled by fetchWeather() off the main thread, hidden until it lands.
++        weather = findViewById(R.id.weather);
++        showWeather = getResources().getBoolean(R.bool.show_weather);
++        if (showWeather) {
++            try {
++                weatherLat = Double.parseDouble(getString(R.string.weather_latitude));
++                weatherLon = Double.parseDouble(getString(R.string.weather_longitude));
++                weatherLabel = getString(R.string.weather_label);
++            } catch (NumberFormatException e) {
++                showWeather = false;
++            }
++        }
+         greetingName = cfg.greetingName;
+         if (cfg.dateBelowClock) moveDateBelowClock();
+         if (shamsi) {
+@@ -980,6 +1006,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+             pillsShown = true;
+         }
+         if (showStats) startStats();
++        if (showWeather) {
++            handler.removeCallbacks(weatherTick);
++            handler.post(weatherTick);   // a reading now, then every WEATHER_MS
++        }
+         sky.update();
+         wallpaperPlayer.start();
+         handler.postDelayed(minuteTick, MINUTE_MS);
+@@ -1156,6 +1186,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         ambient.animate().cancel();
+         heroArt.animate().cancel();
+         handler.removeCallbacks(minuteTick);
++        handler.removeCallbacks(weatherTick);
+         stopStats();
+         if (diya != null) diya.stop();
+         cancelPendingFocusScroll();
+@@ -2039,6 +2070,32 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         else glass.setAlpha(0f);
+     }
+ 
++    // ---- optional weather (config.xml show_weather) -----------------------------------------------
++
++    /** Re-reads the weather every WEATHER_MS while Home is in front. */
++    private final Runnable weatherTick = new Runnable() {
++        @Override
++        public void run() {
++            fetchWeather();
++            handler.postDelayed(this, WEATHER_MS);
++        }
++    };
++
++    /** One reading off the main thread; the line updates (and appears) only if a reading comes back, so a
++     *  dropped connection just leaves the last temperature in place. */
++    private void fetchWeather() {
++        if (!showWeather) return;
++        new Thread(() -> {
++            Weather.Now now = Weather.fetch(weatherLat, weatherLon);
++            if (now == null) return;
++            handler.post(() -> {
++                if (!showWeather || weather == null) return;
++                weather.setText(getString(R.string.weather_line, now.glyph, now.tempC, weatherLabel));
++                weather.setVisibility(View.VISIBLE);
++            });
++        }, "weather").start();
++    }
++
+     // ---- optional system stats (config.xml show_stats) --------------------------------------------
+ 
+     /** Background reader. Started only while Home is resumed and show_stats is on. */
+@@ -2104,9 +2161,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         StringBuilder line = new StringBuilder();
+         if (cpu >= 0) line.append(getString(R.string.stats_cpu, cpu));
+         long[] mem = memUsedOfTotalMb();
+-        if (mem != null) appendStat(line, getString(R.string.stats_memory, mem[0], mem[1]));
+-        String free = formatGb(getResources(), Environment.getDataDirectory().getFreeSpace());
+-        if (!free.isEmpty()) appendStat(line, getString(R.string.stats_storage, free));
++        if (mem != null && mem[1] > 0) {
++            int ramPct = (int) Math.max(0, Math.min(100, Math.round(mem[0] * 100.0 / mem[1])));
++            appendStat(line, getString(R.string.stats_ram_pct, ramPct));
++        }
+         return StatsText.forLocale(line.toString(), getResources().getConfiguration().getLocales().get(0));
+     }
+ 
+diff --git a/launcher/app/src/main/res/layout/activity_main.xml b/launcher/app/src/main/res/layout/activity_main.xml
+index 9c071595..d742dda9 100644
+--- a/launcher/app/src/main/res/layout/activity_main.xml
++++ b/launcher/app/src/main/res/layout/activity_main.xml
+@@ -163,37 +163,40 @@
+             android:clipChildren="false"
+             android:clipToPadding="false">
+ 
++            <!-- Greeting, top-left above the clock row. -->
++            <TextView
++                android:id="@+id/greeting"
++                android:gravity="left"
++                android:layout_width="wrap_content"
++                android:layout_height="wrap_content"
++                android:layout_alignParentStart="true"
++                android:layout_alignParentTop="true"
++                android:layout_marginStart="4dp"
++                android:singleLine="true"
++                android:ellipsize="end"
++                android:textColor="#8CFFFFFF"
++                android:textSize="12sp"
++                android:fontFamily="@string/font_medium"
++                android:letterSpacing="0.22"
++                android:textAllCaps="true" />
++
+             <LinearLayout
+                 android:id="@+id/leftBlock"
+                 android:layout_width="match_parent"
+                 android:layout_height="wrap_content"
+                 android:layout_alignParentStart="true"
++                android:layout_below="@id/greeting"
+                 android:layout_toStartOf="@+id/topButtons"
++                android:layout_marginTop="2dp"
+                 android:layout_marginEnd="16dp"
+                 android:orientation="vertical">
+ 
+-                <!-- The header texts use gravity left, not start: the launcher lays out left to right
+-                     (no supportsRtl), and with start a right-to-left script such as Arabic would move to the
+-                     right edge of these full-width lines instead of staying under the clock. -->
+-                <TextView
+-                    android:id="@+id/greeting"
+-                    android:gravity="left"
+-                    android:layout_width="match_parent"
+-                    android:layout_height="wrap_content"
+-                    android:singleLine="true"
+-                    android:ellipsize="end"
+-                    android:layout_marginStart="4dp"
+-                    android:textColor="#8CFFFFFF"
+-                    android:textSize="12sp"
+-                    android:fontFamily="@string/font_medium"
+-                    android:letterSpacing="0.22"
+-                    android:textAllCaps="true" />
+-
++                <!-- Three even columns: time | date | status. Top-aligned so their tops line up with the clock. -->
+                 <LinearLayout
+                     android:layout_width="match_parent"
+                     android:layout_height="wrap_content"
+                     android:orientation="horizontal"
+-                    android:baselineAligned="true">
++                    android:baselineAligned="false">
+ 
+                     <TextClock
+                         android:id="@+id/clock"
+@@ -225,19 +228,20 @@
+                     <View
+                         android:id="@+id/clockDivider"
+                         android:layout_width="1dp"
+-                        android:layout_height="26dp"
+-                        android:layout_gravity="bottom"
+-                        android:layout_marginStart="16dp"
+-                        android:layout_marginEnd="16dp"
+-                        android:layout_marginBottom="8dp"
+-                        android:background="#33FFFFFF" />
+-
++                        android:layout_height="46dp"
++                        android:layout_gravity="top"
++                        android:layout_marginStart="18dp"
++                        android:layout_marginEnd="18dp"
++                        android:layout_marginTop="3dp"
++                        android:background="#2EFFFFFF" />
++
++                    <!-- Col 2: date -->
+                     <LinearLayout
+                         android:layout_width="0dp"
+                         android:layout_weight="1"
+                         android:layout_height="wrap_content"
+-                        android:layout_gravity="bottom"
+-                        android:layout_marginBottom="9dp"
++                        android:layout_gravity="top"
++                        android:layout_marginTop="3dp"
+                         android:orientation="vertical">
+ 
+                         <!-- Shamsi date ("27 Mehr 1405"), shown when shamsi_date is on. -->
+@@ -266,10 +270,10 @@
+                             android:ellipsize="end"
+                             android:format12Hour="@string/date_format_home"
+                             android:format24Hour="@string/date_format_home"
+-                            android:textColor="#A6FFFFFF"
+-                            android:textSize="14sp"
++                            android:textColor="#E6FFFFFF"
++                            android:textSize="22sp"
+                             android:fontFamily="@string/font_regular"
+-                            android:letterSpacing="0.14"
++                            android:letterSpacing="0.08"
+                             android:textAllCaps="true" />
+ 
+                         <!-- Lunar date ("Lunar 13/9 · Year of the Horse"), shown when lunar_date is on. -->
+@@ -278,8 +282,9 @@
+                             android:gravity="left"
+                             android:layout_width="match_parent"
+                             android:layout_height="wrap_content"
+-                            android:layout_marginTop="4dp"
+-                            android:singleLine="true"
++                            android:layout_marginTop="5dp"
++                            android:maxLines="2"
++                            android:lineSpacingExtra="2dp"
+                             android:ellipsize="end"
+                             android:textColor="#80FFFFFF"
+                             android:textSize="14sp"
+@@ -288,36 +293,85 @@
+                             android:textAllCaps="true"
+                             android:visibility="gone" />
+                     </LinearLayout>
++
++                    <View
++                        android:id="@+id/clockDivider2"
++                        android:layout_width="1dp"
++                        android:layout_height="46dp"
++                        android:layout_gravity="top"
++                        android:layout_marginStart="18dp"
++                        android:layout_marginEnd="18dp"
++                        android:layout_marginTop="3dp"
++                        android:background="#2EFFFFFF" />
++
++                    <!-- Col 3: status — home time, weather, CPU/RAM -->
++                    <LinearLayout
++                        android:layout_width="0dp"
++                        android:layout_weight="1"
++                        android:layout_height="wrap_content"
++                        android:layout_gravity="top"
++                        android:layout_marginTop="4dp"
++                        android:orientation="vertical">
++
++                        <!-- Home-country time (e.g. "VN 14:30"), shown when second_clock is on. Zone set in code. -->
++                        <TextClock
++                            android:id="@+id/vnClock"
++                            android:gravity="left"
++                            android:layout_width="match_parent"
++                            android:layout_height="wrap_content"
++                            android:singleLine="true"
++                            android:format12Hour="@string/second_clock_format12"
++                            android:format24Hour="@string/second_clock_format24"
++                            android:textColor="#CCFFFFFF"
++                            android:textSize="16sp"
++                            android:fontFamily="@string/font_medium"
++                            android:letterSpacing="0.06"
++                            android:includeFontPadding="false"
++                            android:visibility="gone" />
++
++                        <!-- Current weather "☀  13°  ·  Budapest" (show_weather). Filled from Open-Meteo off the
++                             main thread; hidden until the first reading. -->
++                        <TextView
++                            android:id="@+id/weather"
++                            android:gravity="left"
++                            android:layout_width="match_parent"
++                            android:layout_height="wrap_content"
++                            android:layout_marginTop="5dp"
++                            android:singleLine="true"
++                            android:ellipsize="end"
++                            android:textColor="#B3FFFFFF"
++                            android:textSize="14sp"
++                            android:fontFamily="@string/font_medium"
++                            android:letterSpacing="0.04"
++                            android:visibility="gone" />
++
++                        <!-- CPU / RAM (show_stats). -->
++                        <TextView
++                            android:id="@+id/stats"
++                            android:gravity="left"
++                            android:layout_width="match_parent"
++                            android:layout_height="wrap_content"
++                            android:layout_marginTop="5dp"
++                            android:singleLine="true"
++                            android:ellipsize="end"
++                            android:textColor="#A6FFFFFF"
++                            android:textSize="14sp"
++                            android:fontFamily="@string/font_medium"
++                            android:letterSpacing="0.04"
++                            android:focusable="false"
++                            android:visibility="gone" />
++                    </LinearLayout>
+                 </LinearLayout>
+ 
+             </LinearLayout>
+ 
+-            <!-- Shown only when show_stats is on. Outside leftBlock, so the top buttons stay level with the clock
+-                 row; gone, it takes no space. -->
+-            <TextView
+-                android:id="@+id/stats"
+-                android:layout_width="wrap_content"
+-                android:layout_below="@id/leftBlock"
+-                android:layout_alignStart="@id/leftBlock"
+-                android:gravity="left"
+-                android:layout_height="wrap_content"
+-                android:layout_marginTop="2dp"
+-                android:singleLine="true"
+-                android:ellipsize="end"
+-                android:textColor="#D9FFFFFF"
+-                android:textSize="14sp"
+-                android:fontFamily="@string/font_medium"
+-                android:letterSpacing="0.04"
+-                android:focusable="false"
+-                android:visibility="gone" />
+-
+             <LinearLayout
+                 android:id="@+id/topButtons"
+                 android:layout_width="wrap_content"
+                 android:layout_height="wrap_content"
+                 android:layout_alignParentEnd="true"
+-                android:layout_alignBottom="@id/leftBlock"
+-                android:layout_marginBottom="6dp"
++                android:layout_alignTop="@id/leftBlock"
++                android:layout_marginTop="2dp"
+                 android:clipChildren="false"
+                 android:clipToPadding="false"
+                 android:orientation="horizontal">
+diff --git a/launcher/app/src/main/res/values-vi/lunar.xml b/launcher/app/src/main/res/values-vi/lunar.xml
+index 98827fea..3576f573 100644
+--- a/launcher/app/src/main/res/values-vi/lunar.xml
++++ b/launcher/app/src/main/res/values-vi/lunar.xml
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-    <string name="lunar_date_format">%1$d/%2$s âm lịch · %3$s</string>
++    <string name="lunar_date_format">%1$d/%2$s âm lịch\n%3$s</string>
+     <string name="lunar_month_leap">%1$d nhuận</string>
+     <string name="lunar_year">%1$s %2$s</string>
+     <string-array name="lunar_stems">
+diff --git a/launcher/app/src/main/res/values/config.xml b/launcher/app/src/main/res/values/config.xml
+index e3b96ef3..8fb9acff 100644
+--- a/launcher/app/src/main/res/values/config.xml
++++ b/launcher/app/src/main/res/values/config.xml
+@@ -10,6 +10,7 @@
+     <!-- Tried in order when no standard settings handler is usable; each package must also be visible
+          through <queries> in the manifest. -->
+     <string-array name="settings_fallback_components" translatable="false">
++        <item>com.android.tv.settings/.MainSettings</item>
+         <item>com.xiaomi.mitv.settings/com.xiaomi.mitv.settings.entry.MainActivity</item>
+         <item>com.tcl.settings/com.tcl.settings.ui.MainActivity</item>
+         <item>com.amazon.tv.launcher/com.amazon.tv.launcher.ui.MainSettingsActivity</item>
+@@ -17,10 +18,10 @@
+ 
+     <!-- Apps pinned to the dock row at the bottom, in this order. Missing apps are skipped. -->
+     <string-array name="dock_apps">
+-        <item>com.netflix.ninja</item>
+-        <item>com.amazon.amazonvideo.livingroom</item>
+-        <item>com.google.android.youtube.tv</item>
+-        <item>in.startv.hotstar</item>
++        <item>org.smarttube.stable</item>
++        <item>com.netflix.mediaclient</item>
++        <item>com.htc.samescreen</item>
++        <item>com.android.chrome</item>
+     </string-array>
+     <!-- With fewer dock_apps than columns (or a dock app that is not installed), the free dock slots take
+          the first grid apps, so the dock never shows a gap. false leaves them empty (#162); a theme can
+@@ -128,6 +129,10 @@
+          com.xiaomi.mitv.tvplayer.EXTSRC_PLAY and MStar numbers: HW5=23, HW6=24, HW7=25, HW8=-, HW2=2,
+          HW3=-, HW4=- (see examples/redmi-mitv-mftp0). Leave empty to omit. -->
+     <string-array name="input_sources" translatable="false">
++        <item>HW2=-</item>
++        <item>HW3=-</item>
++        <item>HW4=-</item>
++        <item>HW5=-</item>
+     </string-array>
+ 
+     <!-- Remote buttons that open Settings, by Linux scancode (HOME_KEY_SERVICE=1 build-and-install.sh). Remotes
+@@ -225,7 +230,7 @@
+          Gregorian date. -->
+     <bool name="shamsi_date">false</bool>
+     <!-- Lunisolar (Vietnamese / Chinese) date under the date; config.json lunar_date, lunar_utc_offset (7 or 8, default by locale). -->
+-    <bool name="lunar_date">false</bool>
++    <bool name="lunar_date">true</bool>
+     <!-- The date (with the Shamsi and lunar lines) on its own line under the clock instead of beside it, for a top bar
+          whose pills leave the date too little room. Can also be set with "date_below_clock" in a theme. -->
+     <bool name="date_below_clock">false</bool>
+@@ -285,7 +290,7 @@
+     <bool name="reorder_button">false</bool>
+     <!-- Wi-Fi and Settings as round icon-only buttons (the network name moves to the talkback description);
+          Inputs keeps its label. -->
+-    <bool name="icon_only_buttons">false</bool>
++    <bool name="icon_only_buttons">true</bool>
+     <!-- The Inputs pill as a round icon button too (the label moves to the talkback description). -->
+     <bool name="icon_only_inputs">false</bool>
+     <!-- true colours the Wi-Fi pill's icon green while the TV is online and leaves it white while it is not (dark on
+@@ -398,7 +403,12 @@
+ 
+     <!-- One line under the clock: CPU, free memory and free storage. Off by default; a theme can set
+          "show_stats": true. Nothing is read, and the clock does not move, while this is false. -->
+-    <bool name="show_stats">false</bool>
++    <bool name="show_stats">true</bool>
++
++    <!-- A second small clock next to the date, for the home time zone (second_clock_tz, default Vietnam). -->
++    <bool name="second_clock">true</bool>
++    <!-- Current weather under the date, from Open-Meteo (no API key). Location: weather_latitude/longitude/label. -->
++    <bool name="show_weather">true</bool>
+ 
+     <!-- Time-of-day backdrop behind everything: a dark gradient that follows the clock, with a warm
+          horizon glow around sunrise and sunset. 0 keeps the plain background (the default); 1 to 100
+@@ -445,12 +455,12 @@
+          Unlike the system screensaver this never starts over live TV or an app, which matters on TVs whose
+          Live TV window does not keep the screen on (CVTE): there the system screensaver would start in the
+          middle of a programme. Can also be set with "home_idle_clock_minutes": 10 in a theme's config.json. -->
+-    <integer name="home_idle_clock_minutes">0</integer>
++    <integer name="home_idle_clock_minutes">10</integer>
+     <!-- The clock screensaver (Home idle clock and the system screensaver) over Home's wallpaper instead of black with
+          a coloured glow. The clock still moves every minute. Can also be set with "clock_wallpaper" in a theme. -->
+-    <bool name="clock_wallpaper">false</bool>
++    <bool name="clock_wallpaper">true</bool>
+     <!-- How dark that wallpaper is behind the clock, 0 to 90 %. Can also be set with "clock_wallpaper_dim". -->
+-    <integer name="clock_wallpaper_dim">50</integer>
++    <integer name="clock_wallpaper_dim">22</integer>
+     <!-- The clock screensaver's slow coloured glow behind the clock. false leaves the clock and date alone on plain black
+          (OLED panels); they still move every minute. Ignored while clock_wallpaper shows a picture. Can also be set
+          with "clock_glow" in a theme. -->
+diff --git a/launcher/app/src/main/res/values/strings.xml b/launcher/app/src/main/res/values/strings.xml
+index c4e5a5a9..6dddb777 100644
+--- a/launcher/app/src/main/res/values/strings.xml
++++ b/launcher/app/src/main/res/values/strings.xml
+@@ -23,7 +23,7 @@
+     <string name="cant_open">Can\'t open %1$s</string>
+     <string name="date_format">EEEE  d MMMM</string>
+     <!-- Date next to the clock on Home; a locale can split it over two lines with \n. -->
+-    <string name="date_format_home" translatable="false">@string/date_format</string>
++    <string name="date_format_home" translatable="false">EEE, dd/MM</string>
+     <string name="shamsi_month_farvardin">Farvardin</string>
+     <string name="shamsi_month_ordibehesht">Ordibehesht</string>
+     <string name="shamsi_month_khordad">Khordad</string>
+@@ -36,8 +36,19 @@
+     <string name="shamsi_month_dey">Dey</string>
+     <string name="shamsi_month_bahman">Bahman</string>
+     <string name="shamsi_month_esfand">Esfand</string>
++    <!-- Second clock (home time zone). 'VN' is literal text; the zone itself is set in code from second_clock_tz. -->
++    <string name="second_clock_format24" translatable="false">\'VN\'  HH:mm</string>
++    <string name="second_clock_format12" translatable="false">\'VN\'  h:mm</string>
++    <string name="second_clock_tz" translatable="false">Asia/Ho_Chi_Minh</string>
++    <!-- Weather location (Open-Meteo). Budapest by default; change the two numbers and the label for another place. -->
++    <string name="weather_latitude" translatable="false">47.4979</string>
++    <string name="weather_longitude" translatable="false">19.0402</string>
++    <string name="weather_label" translatable="false">Budapest</string>
++    <!-- "<glyph>  <temp>°  ·  <place>", e.g. "☁  12°  ·  Budapest". -->
++    <string name="weather_line" translatable="false">%1$s  %2$d°  ·  %3$s</string>
+     <string name="stats_cpu">CPU %1$d%%</string>
+     <string name="stats_memory">Memory %1$d / %2$d MB</string>
++    <string name="stats_ram_pct">RAM %1$d%%</string>
+     <string name="stats_storage">Storage %1$s free</string>
+     <string name="storage_gb_whole">%1$.0f GB</string>
+     <string name="storage_gb_decimal">%1$.1f GB</string>
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/Weather.java b/launcher/app/src/main/java/com/gathin/tvhome/Weather.java
+new file mode 100644
+index 00000000..229f076d
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/Weather.java
+@@ -0,0 +1,76 @@
++package com.gathin.tvhome;
++
++import android.util.Log;
++
++import org.json.JSONObject;
++
++import java.io.ByteArrayOutputStream;
++import java.io.InputStream;
++import java.net.HttpURLConnection;
++import java.net.URL;
++
++/**
++ * Current weather for a fixed point from Open-Meteo (open-meteo.com): free, no API key, HTTPS. Dependency-free
++ * and called off the main thread; a failure just returns null and the header keeps its last reading.
++ */
++final class Weather {
++
++    private static final String TAG = "Weather";
++
++    private Weather() {}
++
++    /** One reading: the temperature in whole degrees and a single glyph for the sky. */
++    static final class Now {
++        final int tempC;
++        final String glyph;
++        Now(int tempC, String glyph) {
++            this.tempC = tempC;
++            this.glyph = glyph;
++        }
++    }
++
++    static Now fetch(double lat, double lon) {
++        HttpURLConnection c = null;
++        try {
++            URL url = new URL("https://api.open-meteo.com/v1/forecast?latitude=" + lat
++                    + "&longitude=" + lon + "&current=temperature_2m,weather_code&timezone=auto");
++            c = (HttpURLConnection) url.openConnection();
++            c.setConnectTimeout(8000);
++            c.setReadTimeout(8000);
++            c.setRequestProperty("User-Agent", "tvhome");
++            if (c.getResponseCode() != 200) return null;
++            JSONObject current = new JSONObject(readAll(c.getInputStream())).getJSONObject("current");
++            int temp = (int) Math.round(current.getDouble("temperature_2m"));
++            return new Now(temp, glyphFor(current.optInt("weather_code", -1)));
++        } catch (Exception e) {
++            Log.d(TAG, "fetch failed: " + e);
++            return null;
++        } finally {
++            if (c != null) c.disconnect();
++        }
++    }
++
++    private static String readAll(InputStream in) throws Exception {
++        try (InputStream src = in) {
++            ByteArrayOutputStream out = new ByteArrayOutputStream();
++            byte[] buf = new byte[4096];
++            int n;
++            while ((n = src.read(buf)) != -1) out.write(buf, 0, n);
++            return out.toString("UTF-8");
++        }
++    }
++
++    /** WMO weather interpretation code → one glyph. Plain sun/cloud/umbrella/snow symbols render without an emoji font. */
++    private static String glyphFor(int code) {
++        if (code == 0) return "☀";                         // ☀ clear
++        if (code == 1 || code == 2) return "⛅";            // ⛅ mainly clear / partly cloudy
++        if (code == 3) return "☁";                         // ☁ overcast
++        if (code == 45 || code == 48) return "☁";          // fog
++        if (code >= 51 && code <= 67) return "☂";          // ☂ drizzle / rain
++        if (code >= 71 && code <= 77) return "❄";          // ❄ snow
++        if (code >= 80 && code <= 82) return "☂";          // rain showers
++        if (code >= 85 && code <= 86) return "❄";          // snow showers
++        if (code >= 95) return "⚡";                        // ⚡ thunderstorm
++        return "☀";
++    }
++}

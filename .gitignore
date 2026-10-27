@@ -1,0 +1,20 @@
+# Build output / IDE (never commit — can leak local paths & usernames)
+build/
+.gradle/
+local.properties
+*.iml
+.idea/
+
+# Large / proprietary binaries are intentionally NOT in this repo.
+# They are linked from their sources instead. Keep it that way.
+*.img
+*.fex
+*.rar
+*.apk
+*.so
+*.dex
+*.bin
+
+# OS cruft
+.DS_Store
+Thumbs.db
