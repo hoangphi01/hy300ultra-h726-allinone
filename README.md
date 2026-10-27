@@ -70,7 +70,8 @@ Each of these threads has its own write-up in the [Documentation Index](#5-docum
 - [x] **Keystone / auto-keystone / autofocus subsystem reverse-engineered** - two separate keystone paths, the gravity-sensor z-axis sign bug, the real baseline store (`set_angle_offset` -> `/oem/gsensor_data`), plus a full H726-vs-H713 difference table.
 - [x] **BadBox 2.0 neutralized** - removed the fake `com.android.vending` (Tubesky), OTA droppers and telemetry, and masked the `/system/xbin/hotacksu` setuid-root backdoor persistently.
 - [x] **Post-root customization** - custom home screen (weather, second time zone, Vietnamese lunar date, photo-frame screensaver, three-column header), a consolidated "Hub" settings app, boot logo, timezone.
-- [ ] **Open:** AirScreen for AirPlay; Private DNS ad-block; board teardown for IC-level specs; clean sunxi-fel / U-Boot port for sun50iw15.
+- [x] **Ad-free AirPlay casting** - replaced the Pro-gated AirScreen with a free receiver auto-started at boot, and root-caused and fixed a cast aspect-ratio stretch down to an Allwinner hardware-decoder quirk (a distorted crop rectangle the receiver trusted). See [05. Post-root](docs/05-post-root.md#6-screen-mirroring-airplay-and-the-cast-aspect-fix).
+- [ ] **Open:** Private DNS ad-block; board teardown for IC-level specs; clean sunxi-fel / U-Boot port for sun50iw15.
 
 ## 5. Documentation Index
 

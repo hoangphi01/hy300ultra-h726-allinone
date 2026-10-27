@@ -42,6 +42,14 @@ This SoC is 32-bit (`armeabi-v7a`); 64-bit-only APKs and the Play-certified YouT
 - **[Material Files](https://github.com/zhanghai/MaterialFiles)** - light FOSS file manager (replaces the adware stock / ES explorer).
 - **Screen mirroring receiver** - if the stock AirPlay (`com.mphotool.airplay`) stays broken. Prefer a free, ad-free one: [PhairPlay](https://github.com/mazer666/PhairPlay) (AirPlay 2 / Miracast / DLNA; its APK ships `armeabi-v7a`, so it runs on this 32-bit SoC) or [iMirror](https://github.com/prat3ik/iMirror) (AirPlay only, more mature). Avoid AirScreen: it gates use behind a Pro-registration nag. For YouTube, do not cast at all; YouTube only casts to certified receivers, so watch it natively with SmartTube and its "Link with TV code" remote.
 
-## 6. zram
+## 6. Screen mirroring (AirPlay) and the cast aspect fix
+
+[PhairPlay](https://github.com/mazer666/PhairPlay) runs as a headless receiver; it is started at boot from the [hy300tweaks module](../magisk-module/hy300tweaks) (`service.sh`) so AirPlay is always available without opening the app.
+
+<img src="../assets/screenshots/phairplay-receiver.png" width="560" alt="PhairPlay receiver, ready for connections">
+
+One catch is specific to this SoC: an iPhone mirror came out **stretched horizontally**. The cause is the Allwinner hardware decoder, which scales a 1080-tall source down toward the 720p panel with unequal horizontal/vertical ratios and then reports a distorted crop rectangle (e.g. `484x712` for a true `498x1080` stream); PhairPlay trusted that crop and rendered the wrong aspect. The fix is a one-line change so the receiver keeps the true SPS-parsed size instead of the decoder's crop. Full diagnosis and the build recipe (apktool, local only, not redistributed) are in [`../scripts/phairplay-aspect-fix.md`](../scripts/phairplay-aspect-fix.md). The vendor HDMI-in aspect control, a separate lever, is in [`../scripts/SetAspect.java`](../scripts/SetAspect.java).
+
+## 7. zram
 
 Already enabled by the firmware (low-RAM device).
