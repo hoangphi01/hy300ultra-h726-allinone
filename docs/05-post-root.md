@@ -14,7 +14,7 @@ The home screen is a patch on top of [Gathin23/cleanyourtv](https://github.com/G
 
 Apply it (see [`../launcher-mods/README.md`](../launcher-mods/README.md)): clone cleanyourtv, apply `hy300-home.patch` (or copy the files from `launcher-mods/src/`), then `JAVA_HOME=<jdk-22> sh ./gradlew assembleRelease` and `adb install -r app-release.apk`.
 
-> Build gotcha: on Windows, `cmd.exe /c gradlew.bat ...` does nothing here; use `sh ./gradlew assembleRelease`. The release build is debug-signed, so `adb install -r` overwrites cleanly.
+> Build note: on Windows, `cmd.exe /c gradlew.bat ...` does nothing here; use `sh ./gradlew assembleRelease`. The release build is debug-signed, so `adb install -r` overwrites cleanly.
 
 ### Screensaver behaviour on this firmware
 

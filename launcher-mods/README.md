@@ -29,6 +29,6 @@ JAVA_HOME=/path/to/jdk-22 sh ./gradlew assembleRelease
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-**Build gotcha (Windows):** `cmd.exe /c gradlew.bat …` produces no output here - use `sh ./gradlew`. The release APK is debug-signed, so `adb install -r` overwrites an existing install.
+**Build note (Windows):** `cmd.exe /c gradlew.bat …` produces no output here; use `sh ./gradlew`. The release APK is debug-signed, so `adb install -r` overwrites an existing install.
 
 **Configure the weather location:** edit `weather_latitude` / `weather_longitude` / `weather_label` in `res/values/strings.xml` (default is Budapest). The second-clock time zone is `second_clock_tz` (default `Asia/Ho_Chi_Minh`).

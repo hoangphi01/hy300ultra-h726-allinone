@@ -48,19 +48,19 @@ Repo viết để **bổ sung, không thay thế [guide root H726 trên XDA](htt
 
 > Thông số lấy bằng **probe phần mềm + FEL**, không phải tháo máy đo. GPU (Mali-G31) và dòng chip Wi-Fi/BT (AIC) đọc được từ hệ thống đang chạy; còn **PMIC, amply, model Wi-Fi / chuẩn 802.11 chính xác, dung lượng eMMC và phiên bản kernel thì chưa xác nhận** - rất hoan nghênh đóng góp từ ai tháo máy.
 
-## 3. Câu chuyện: từ từng thanh ghi tới bản cài image
+## 3. Quá trình: từ thanh ghi đến bản cài image
 
-Root con này không phải một exploit gọn gàng; nó là cả tuần đâm vào ngõ cụt, và chính các ngõ cụt mới là thứ đáng kể lại.
+Việc root thiết bị này không đến từ một lỗ hổng duy nhất, mà là kết quả của nhiều ngày thử nghiệm và loại trừ. Phần đáng ghi lại nhất là những hướng đi không thành công, bởi chúng giải thích vì sao cách làm cuối cùng lại như vậy.
 
-**Bức tường.** Mọi công cụ công khai cho dòng máy chiếu này - sunxi-fel, U-Boot, các guide root - đều nhắm **H713 (`sun50iw12`, FEL `0x1860`)**. Máy này trả lời FEL bằng `soc=00001911(unknown)`: một SoC *mới hơn*, `sun50iw15`, không BSP, không FEL port, không U-Boot ở đâu cả. Lệnh thường kết nối được rồi... treo.
+Trở ngại đầu tiên nằm ở công cụ. Gần như toàn bộ công cụ công khai cho dòng máy chiếu này (sunxi-fel, U-Boot, các hướng dẫn root) được viết cho H713 (`sun50iw12`, FEL `0x1860`). Thiết bị ở đây trả lời FEL bằng `soc=00001911(unknown)`, tức một SoC mới hơn là `sun50iw15`, chưa có BSP, chưa có bản FEL hỗ trợ và chưa có U-Boot công khai. Các lệnh thường kết nối được, nhưng sau đó treo.
 
-**Mò xuống mức thanh ghi.** Nên mấy ngày đầu là xử lý từng thanh ghi một. Các script trong [`scripts/`](scripts) quét BootROM tìm địa chỉ reset-vector **RVBAR**, disassemble mask ROM tìm lệnh ghi **RMR** để lật core giữa AArch32 và AArch64, và dò địa chỉ nạp mà SoC mong cho blob first-stage **`fes1`**. Mọi hằng số của H713 đều thử, và cái nào cũng treo ở "unexpected `SCTLR`". Đột phá ở tầng này nhỏ mà rất cụ thể: **`fes1.fex` stock nạp vào SRAM `0x0010C000`**, và U-Boot của hãng có đầu tự chuyển mode ARM32, nên **không** cần nhảy RVBAR ngoài - đúng cái mà luồng H713 ép làm, và là lý do nó treo. Có vậy, FEL mới init được DRAM và chạy bootloader.
+Vì vậy, giai đoạn đầu tập trung ở mức thanh ghi. Các script trong [`scripts/`](scripts) quét BootROM để tìm địa chỉ reset-vector (RVBAR), dịch ngược mask ROM để tìm lệnh ghi RMR (lệnh chuyển lõi giữa AArch32 và AArch64), và dò địa chỉ nạp mà SoC yêu cầu cho khối first-stage `fes1`. Khi áp dụng các hằng số của H713, mọi trường hợp đều dừng ở lỗi "unexpected `SCTLR`". Điểm mấu chốt tìm được tuy nhỏ nhưng mang tính quyết định: `fes1.fex` gốc được nạp vào SRAM tại `0x0010C000`, và U-Boot của nhà sản xuất đã có sẵn đoạn đầu tự chuyển sang chế độ ARM32, nên không cần thao tác nhảy RVBAR từ bên ngoài. Chính thao tác thừa đó trong luồng H713 là nguyên nhân gây treo. Sau khi loại bỏ nó, FEL khởi tạo được DRAM và chạy bootloader.
 
-**Chướng ngại thật không nằm ở thanh ghi - mà ở bản cài image.** Có đường vào rồi, kế hoạch tưởng đơn giản: vá Magisk vào `init_boot`, flash, xong. PhoenixSuit từ chối mọi image với lỗi phẳng lì *"firmware file is valid"*. Hex-edit thẳng vào `IMAGEWTY` - `init_boot`, `vbmeta`, `dlinfo`, `sys_partition` - chỉ làm tệ hơn. Container giữ **V-file `add_sum` cho từng partition**: một file `V<name>.fex` tí hon chứa checksum `u32` (pad lên bội 4, cộng từng word little-endian). Đổi payload là checksum không khớp nữa, nên bộ flash từ chối cả image. Cách sửa cuối cùng cho ra root là ngừng edit tại chỗ, thay vào đó **thay cả payload rồi tính lại V-file** - copy stock byte-for-byte, chỉ thay `init_boot` (Magisk) và `vbmeta` (tắt verity), rồi ghi lại hai checksum `add_sum`. PhoenixSuit chấp nhận; `su` trả về `uid=0`.
+Trở ngại lớn hơn lại không nằm ở thanh ghi, mà ở chính bản cài. Khi đã vào được, kế hoạch ban đầu khá đơn giản: vá Magisk vào `init_boot` rồi flash. Tuy nhiên PhoenixSuit từ chối mọi image kèm thông báo chung chung "firmware file is valid". Việc chỉnh sửa trực tiếp trong `IMAGEWTY` (các phần `init_boot`, `vbmeta`, `dlinfo`, `sys_partition`) chỉ khiến tình hình xấu hơn. Nguyên nhân là mỗi partition đi kèm một tệp kiểm tra `add_sum`: một tệp `V<name>.fex` nhỏ chứa checksum dạng `u32` (payload được đệm cho đủ bội số 4 byte rồi cộng từng word little-endian). Chỉ cần thay đổi payload thì checksum không còn khớp, và bộ nạp sẽ từ chối toàn bộ image. Hướng xử lý cho kết quả là không chỉnh sửa tại chỗ nữa, mà thay nguyên payload rồi tính lại tệp kiểm tra: sao chép bản gốc nguyên vẹn theo từng byte, chỉ thay `init_boot` (bản Magisk) và `vbmeta` (đã tắt verity), sau đó ghi lại hai checksum `add_sum` tương ứng. PhoenixSuit chấp nhận image này, và `su` trả về `uid=0`.
 
-**Có root rồi, công việc quay vào bên trong.** Root là phương tiện, không phải đích. Thói quen decompile-và-dò đó áp vào **hệ hiển thị**: lần theo vì sao auto-keystone cứ méo, đi qua hai đường code keystone riêng và một bug dấu của cảm biến trọng lực, kết lại ở một nhận ra gói gọn một dòng về tư thế máy (mục 5 có bài viết). Cũng sự tò mò đó phát hiện một **backdoor setuid-root** nằm trong `/system/xbin` và cái Play Store giả bên cạnh. Rồi tới phần vui nhất - dựng lại màn hình chính cho ra hồn.
+Sau khi có quyền root, phần việc chuyển sang tìm hiểu hệ thống. Cùng cách tiếp cận dịch ngược và kiểm tra được áp dụng cho hệ hiển thị, nhằm lý giải vì sao auto-keystone liên tục bị méo; quá trình này đi qua hai luồng xử lý keystone riêng biệt và một lỗi về dấu của cảm biến trọng lực, cuối cùng quy về tư thế lắp đặt của thiết bị (chi tiết ở phần tài liệu). Cũng trong quá trình đó, một backdoor setuid-root trong `/system/xbin` và một ứng dụng giả mạo Play Store đặt cạnh nó được phát hiện. Phần sau cùng là dựng lại màn hình chính của thiết bị.
 
-Mỗi mạch đó đều có bài viết riêng ở [Mục lục tài liệu](#5-mục-lục-tài-liệu), giữ nguyên cả các lỗi đã mắc.
+Mỗi hướng nêu trên đều có tài liệu riêng trong [Mục lục tài liệu](#5-mục-lục-tài-liệu), giữ lại cả những lỗi đã gặp trong quá trình.
 
 ## 4. Kết quả & Cột mốc
 
@@ -82,7 +82,7 @@ Mỗi mạch đó đều có bài viết riêng ở [Mục lục tài liệu](#5
 
 ### [Dịch ngược](docs/03-keystone-display.md)
 Ruột hiển thị và keystone của H726:
-- **[Subsystem keystone / hiển thị](docs/03-keystone-display.md):** hai đường keystone, bug dấu z của gsensor, nơi lưu baseline, điều khiển chế độ chiếu, và bảng H726-vs-H713.
+- **[Subsystem keystone / hiển thị](docs/03-keystone-display.md):** hai đường keystone, lỗi dấu z của gsensor, nơi lưu baseline, điều khiển chế độ chiếu, và bảng H726-vs-H713.
 
 ### [Bảo mật](docs/04-debloat-security.md)
 Gỡ malware họ BadBox:

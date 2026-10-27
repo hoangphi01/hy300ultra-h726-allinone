@@ -2,7 +2,7 @@
 
 How auto-keystone really works on the H726, why it "goes wrong", and the definitive fix (verified, survives reboot). Method: `strings` and jadx of `MagcubicOS.apk` and `tpjz_allwinner.apk` (`com.hysd.vafocus`), device probing, and the H713 keystone model (`allwinner-h713-linux/.../h713-keystone/model/*.py`) as a near-1:1 reference. Vietnamese original: [`vi/keystone-h726.md`](vi/keystone-h726.md).
 
-## 1. Quick fix (TL;DR)
+## 1. Quick fix
 
 The skew ("inverted trapezoid") is **not** a keystone-property problem; it is **device orientation + projection mode**. For a cylinder-on-gimbal unit that can reach "horizontal" two ways:
 
@@ -20,7 +20,7 @@ gsensor (MPU-6880)  ->  raw counts x,y,z  (/sys/devices/platform/prj343x/xyz_dat
    |
 com.hysd.vafocus / LocalService.optKeystoneFun
    |   GsX,GsY = atan(counts) - atan(BASELINE)       (du = current angle - flat reference)
-   |   if counts.z < 0 -> negate GsX,GsY             (the "ceiling/inverted" branch, the gotcha)
+   |   if counts.z < 0 -> negate GsX,GsY             (the "ceiling/inverted" branch)
    v
 libduRYXtp.so: getRYXRatiomapDate -> 8 corner insets
    v
@@ -71,7 +71,7 @@ At a 15-degree tilt the auto-correction is clearly applied, yet `persist.htc.key
 |---|---|---|
 | FEL SoC id | `0x1860` | `0x1911` |
 | Display co-proc | MIPS `display.bin` (`/dev/mipsloader`) | none; DRM/KMS direct (`/dev/sunxi_drm_heap`) |
-| gsensor | SC7A20 | MPU-6880 (reports `z < 0` when inverted, the gotcha) |
+| gsensor | SC7A20 | MPU-6880 (reports `z < 0` when inverted) |
 | Baseline store | `GsInitXYZ` (Settings) | `PrjScreen.set_angle_offset()` -> `/oem/gsensor_data` (GsInitXYZ unused) |
 | Keystone apply | prop / SF txn | two paths: auto -> `KeystoneUtils_726` -> DE; manual -> `persist.htc.keystone.*` |
 | Image flip | - | `factorySetPanelValue(MIRROR, 0..3)` via `ProjectActivity` |

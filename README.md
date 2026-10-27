@@ -48,19 +48,19 @@ It is written to **complement, not replace, the existing [XDA H726 root guide](h
 
 > Specifications were obtained by **software probing + FEL**, not a board teardown. The GPU (Mali-G31) and the Wi-Fi/BT family (AIC) are read from the running system; the **PMIC, audio amp, exact Wi-Fi model / 802.11 standard, eMMC size and kernel version are not yet confirmed** - contributions from a teardown are welcome.
 
-## 3. The story: from registers to the install image
+## 3. Process: from registers to the install image
 
-Rooting this box was not one clean exploit; it was a week of dead-ends, and the dead-ends are the most useful part to pass on.
+Rooting this device was not a single exploit but the result of several days of trial and elimination. The parts most worth recording are the approaches that did not work, because they explain why the final method is shaped the way it is.
 
-**The wall.** Every public tool for these projectors - sunxi-fel, U-Boot, the root guides - targets the **H713 (`sun50iw12`, FEL `0x1860`)**. This unit answered FEL with `soc=00001911(unknown)`: a *newer* SoC, `sun50iw15`, with no BSP, no FEL port, no U-Boot anywhere. The usual commands connected and then simply hung.
+The first obstacle was tooling. Almost every public tool for these projectors (sunxi-fel, U-Boot, the root guides) targets the H713 (`sun50iw12`, FEL `0x1860`). This unit answers FEL with `soc=00001911(unknown)`, a newer SoC, `sun50iw15`, with no BSP, no FEL port and no public U-Boot. The usual commands would connect and then hang.
 
-**Down at the register level.** So the first days were spent one register at a time. Scripts in [`scripts/`](scripts) scanned the BootROM for the **RVBAR** reset-vector address, disassembled the mask ROM looking for the **RMR** write that flips the core between AArch32 and AArch64, and hunted the load address the SoC expects for the first-stage **`fes1`** blob. Every H713 constant was tried and every one hung on an "unexpected `SCTLR`". The breakthrough at this layer was small and specific: the stock **`fes1.fex` loads to SRAM `0x0010C000`**, and the vendor U-Boot has an ARM32 self-switching head, so it needs **no** external RVBAR jump at all - the very thing the H713 flow forces, and the reason it kept hanging. With that, FEL finally brought up DRAM and ran a bootloader.
+The early work therefore stayed at the register level. The scripts in [`scripts/`](scripts) scan the BootROM for the reset-vector address (RVBAR), disassemble the mask ROM to locate the RMR write that switches the core between AArch32 and AArch64, and search for the load address the SoC expects for the first-stage `fes1` blob. Applying the H713 constants, every attempt stopped at an "unexpected `SCTLR`". The decisive detail was small: the stock `fes1.fex` loads to SRAM at `0x0010C000`, and the vendor U-Boot already carries an ARM32 self-switching head, so it needs no external RVBAR jump. That extra step, required by the H713 flow, was the cause of the hang. Once it was removed, FEL brought up DRAM and ran the bootloader.
 
-**The real blocker was not a register - it was the install image.** With a way in, the plan was simple: patch Magisk into `init_boot`, flash, done. PhoenixSuit rejected every image with a flat *"firmware file is valid"* error. Hex-editing the `IMAGEWTY` in place - `init_boot`, `vbmeta`, `dlinfo`, `sys_partition` - only made it worse. The container keeps **per-partition `add_sum` verify-files**: a tiny `V<name>.fex` holding a `u32` checksum (pad to x4, sum every little-endian word). Change a payload and that checksum no longer matches, so the flasher refuses the whole image. The fix that finally produced root was to stop editing in place and instead **swap whole payloads and recompute their verify-files** - a byte-for-byte copy of stock with only the Magisk `init_boot` and a verity-off `vbmeta` replaced, and their two `add_sum` checksums rewritten. PhoenixSuit accepted it; `su` returned `uid=0`.
+The larger obstacle was not a register but the install image itself. With a way in, the plan was simply to patch Magisk into `init_boot` and flash. PhoenixSuit instead rejected every image with a generic "firmware file is valid" message. Editing the `IMAGEWTY` in place (`init_boot`, `vbmeta`, `dlinfo`, `sys_partition`) only made matters worse. The reason is that each partition is accompanied by an `add_sum` verify-file: a small `V<name>.fex` holding a `u32` checksum (the payload is padded to a multiple of four bytes, then every little-endian word is summed). Any change to a payload breaks that checksum, and the flasher rejects the whole image. The approach that worked was to stop editing in place and instead replace whole payloads and recompute their verify-files: copy the stock image byte for byte, replace only `init_boot` (the Magisk build) and `vbmeta` (with verity disabled), and rewrite the two corresponding `add_sum` checksums. PhoenixSuit accepted the result, and `su` returned `uid=0`.
 
-**After root, the work turned inward.** Root was the means, not the end. The same decompile-and-probe habit went into the **display stack**: tracing why auto-keystone kept skewing led through two separate keystone code paths and a gravity-sensor sign bug, and ended at a one-line realization about device orientation (Section 5 links the write-up). The same curiosity found a **setuid-root backdoor** sitting in `/system/xbin` and the fake Play Store next to it. And then the fun part - rebuilding the home screen into something worth looking at.
+Once root was available, the work turned to understanding the system. The same decompile-and-probe approach was applied to the display stack to explain why auto-keystone kept skewing; it passed through two separate keystone paths and a sign error in the gravity-sensor handling, and resolved to the device's mounting orientation (documented in the index). The same process surfaced a setuid-root backdoor in `/system/xbin` and a counterfeit Play Store beside it. The final part was rebuilding the home screen.
 
-Each of those threads has its own write-up in the [Documentation Index](#5-documentation-index), with the mistakes left in.
+Each of these threads has its own write-up in the [Documentation Index](#5-documentation-index), with the mistakes left in.
 
 ## 4. Results & Milestones
 
@@ -82,7 +82,7 @@ Identifying the board and getting Magisk onto it:
 
 ### [Reverse-engineering](docs/03-keystone-display.md)
 Display and keystone internals of the H726:
-- **[Keystone / display subsystem](docs/03-keystone-display.md):** the two keystone paths, the gsensor z-sign gotcha, baseline storage, projection-mode control, and the H726-vs-H713 table.
+- **[Keystone / display subsystem](docs/03-keystone-display.md):** the two keystone paths, the gsensor z-sign issue, baseline storage, projection-mode control, and the H726-vs-H713 table.
 
 ### [Security](docs/04-debloat-security.md)
 Removing the BadBox-family malware:
