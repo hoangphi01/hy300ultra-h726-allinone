@@ -34,7 +34,7 @@ Repo viết để **bổ sung, không thay thế [guide root H726 trên XDA](htt
 ## 2. Thông số thiết bị
 
 - **SoC:** Allwinner H726 (`sun50iw15p1`), FEL SoC id `0x1911`, FEL USB `1f3a:efe8`
-- **CPU:** ARM Cortex-A53 4 nhân
+- **CPU:** ARM Cortex-A53 4 nhân (lõi ARMv8-A, **có khả năng 64-bit nhưng chạy ở chế độ 32-bit / AArch32**: firmware dùng kernel 32-bit và userspace chỉ `armeabi-v7a`, gần như chắc chắn để tiết kiệm RAM trên máy ~1 GB. Công cụ như AIDA64 đọc mã lõi nên báo "ARMv8-A" - đó là phần cứng; còn ABI đang chạy là 32-bit)
 - **GPU:** ARM Mali-G31 (OpenGL ES 3.2, driver `r20p0`; đọc từ SurfaceFlinger trên máy này)
 - **RAM:** ~1 GB (thiết bị low-RAM; `ActivityManager.isLowRamDevice = true`)
 - **Lưu trữ:** eMMC (`/dev/block/mmcblk0`); chưa đo chính xác dung lượng trên máy này

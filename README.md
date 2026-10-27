@@ -34,7 +34,7 @@ It is written to **complement, not replace, the existing [XDA H726 root guide](h
 ## 2. Device Specifications
 
 - **SoC:** Allwinner H726 (`sun50iw15p1`), FEL SoC id `0x1911`, FEL USB `1f3a:efe8`
-- **CPU:** Quad-core ARM Cortex-A53
+- **CPU:** Quad-core ARM Cortex-A53 (an ARMv8-A, 64-bit-capable core, but **run in 32-bit / AArch32 mode**: the firmware ships a 32-bit kernel and an `armeabi-v7a`-only userspace, almost certainly to save RAM on this ~1 GB device. Tools like AIDA64 read the core ID and report "ARMv8-A", which is the silicon; the running ABI is 32-bit)
 - **GPU:** ARM Mali-G31 (OpenGL ES 3.2, driver `r20p0`; from SurfaceFlinger on this unit)
 - **RAM:** ~1 GB (low-RAM device; `ActivityManager.isLowRamDevice = true`)
 - **Storage:** eMMC (`/dev/block/mmcblk0`); total capacity not precisely measured on this unit
