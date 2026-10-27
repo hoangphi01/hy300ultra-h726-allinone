@@ -1,9 +1,8 @@
 <div align="center">
 
-# HY300 Ultra - Allwinner H726 - All-in-One
+# HY300 Ultra (Gojodoq / Magcubic) - Allwinner H726 - Root, Reverse-Engineering & Customization
 
-Root, reverse-engineering, malware removal and customization of the
-**Gojodoq / Magcubic HY300 Ultra** projector - Allwinner **H726 (sun50iw15 / FEL 0x1911)**.
+*Maintained by [hoangphi01](https://github.com/hoangphi01). Built on the XDA H726 root guide and the H713 research base, with [Claude](https://www.anthropic.com/claude) (Anthropic's AI) used as a research assistant.*
 
 **English** · [Tiếng Việt](README.vi.md)
 
@@ -21,114 +20,122 @@ Root, reverse-engineering, malware removal and customization of the
 
 ---
 
-## What this is
+## 1. Overview
 
-The HY300 Ultra is a cheap cylindrical **Android 14** projector sold under many brands - Gojodoq, Magcubic and others - all built on **one white-label Allwinner H726 board**. Out of the box it is locked down: ad/tracker bloat, a **BadBox-family backdoor baked into the firmware**, flaky auto-keystone, a 32-bit userspace that rejects many apps, and no official way to root or modify it.
+This repository is the engineering record and all-in-one archive for the **Gojodoq / Magcubic HY300 Ultra** projector platform, powered by the **Allwinner H726 SoC (`sun50iw15p1`, FEL id `0x1911`)**. The HY300 Ultra is a cheap cylindrical Android 14 projector sold white-label under several brands on one common board; its stock firmware is a locked-down clone carrying ad/tracker bloat and a BadBox-family backdoor.
 
-This repository is the **complete, reproducible record of opening one such unit up and making it yours** - gaining root, reverse-engineering the display/keystone subsystem, removing the malware, and rebuilding the software to taste - with **every external source cited**.
+The work spans the complete stack: FEL / BootROM entry, a minimal-diff rooted IMAGEWTY built around the firmware's **`add_sum` verify-file checksums**, jadx/`strings` reverse-engineering of the **keystone / auto-keystone / autofocus subsystem**, **BadBox 2.0** malware teardown and neutralization, and a full post-root software rebuild.
 
-It is written to **complement, not replace, the existing [XDA root guide](https://xdaforums.com/t/guide-rooting-tutorial-for-a-magcubic-hy300-pro-with-an-allwinner-h726-and-android-14.4776519/)**. That guide shows *how to flash*; this repo documents what it does not: the checksum trick that actually makes a custom image flash, the internals of the keystone system, the malware teardown, and a full post-root setup.
+It is written to **complement, not replace, the existing [XDA H726 root guide](https://xdaforums.com/t/guide-rooting-tutorial-for-a-magcubic-hy300-pro-with-an-allwinner-h726-and-android-14.4776519/)**: that guide covers flashing; this documents what it does not - the checksum detail that actually makes a custom image flash, the internals of the display/keystone system, the malware teardown, and the customization. Everything is specific to the **H726**; H713 owners are redirected in the [Compatibility](#6-compatibility) section.
 
-**Who it's for:** owners of an **H726** HY300-class projector who want to understand and control it - not just follow steps. Everything is specific to the **H726 (sun50iw15 / FEL `0x1911`)**; H713 owners are redirected below.
+## 2. Device Specifications
 
-## Results - what was achieved
+- **SoC:** Allwinner H726 (`sun50iw15p1`), FEL SoC id `0x1911`, FEL USB `1f3a:efe8`
+- **CPU:** Quad-core ARM Cortex-A53
+- **GPU:** ARM Mali (exact model not confirmed on this unit)
+- **RAM:** ~1 GB (low-RAM device; `ActivityManager.isLowRamDevice = true`)
+- **Storage:** ~8 GB eMMC (`mmcblk0`, ~7.3 GB usable)
+- **Gravity sensor:** MPU-6880 (drives auto-keystone; reports z < 0 when inverted)
+- **Display:** 720p native (`1280x720`), LED projector optics
+- **Wireless:** Wi-Fi 6 (802.11ax, 5 GHz) + Bluetooth (controller IC not confirmed)
+- **Operating System:** Android 14 (API 34), Magcubic build `Projector_20250806.111734`
+- **Userspace ABI:** 32-bit `armeabi-v7a` (many 64-bit-only / Play-certified APKs will not install)
+- **Partition Layout:** A/B slots with `init_boot`, dynamic `super`; `verifiedbootstate = orange`, verity disabled; per-unit colour/keystone calibration lives on a reserve partition that stock flashing skips
+- **Identity strings:** `ro.product.model = ADT-3`, aliases HY300 Ultra / Pro / Plus / MAX, SKU `AC1076`
 
-| Area | Outcome |
-|---|---|
-| **Root** | Achieved on **H726 / sun50iw15** - to our knowledge the **first publicly documented** root of this SoC in an HY300-class projector (all existing tooling targets H713). `adb shell su` returns `uid=0(root) … u:r:magisk:s0`. The enabling discovery was fixing the per-partition **`add_sum` verify-file checksum** so PhoenixSuit accepts a minimal-diff Magisk image. → [docs/02](docs/02-rooting.md) |
-| **Auto-keystone** | **Fixed definitively.** The on-screen skew was root-caused not to any property but to **device orientation + projection mode**; after a one-time calibration the image **re-squares at any tilt and survives reboot**. → [docs/03](docs/03-keystone-display.md) |
-| **Reverse-engineering** | The full **keystone / auto-keystone / autofocus pipeline** is mapped - two separate keystone paths, the gravity-sensor **z-axis sign gotcha**, the real baseline store (`set_angle_offset` → `/oem/gsensor_data`) - plus a complete **H726-vs-H713 difference table**. First public RE of this subsystem for H726. → [docs/03](docs/03-keystone-display.md) |
-| **Security** | **BadBox 2.0 components removed** (fake `com.android.vending`/Tubesky, OTA droppers, telemetry) and the **`/system/xbin/hotacksu` setuid-root backdoor neutralized** and kept down across reboots via a Magisk module. → [docs/04](docs/04-debloat-security.md) |
-| **Customization** | A rebuilt **home screen** (live weather, a second time zone, Vietnamese lunar date, an auto-changing photo-frame screensaver, a three-column header), a consolidated **"Hub" settings app**, a custom boot logo, and timezone/labels. → [docs/05](docs/05-post-root.md) |
+> Specifications were obtained by **software probing + FEL**, not a board teardown. IC-level parts (GPU, PMIC, audio amp, Wi-Fi/BT controller) and the exact kernel version are **not yet confirmed** - contributions from a teardown are welcome.
 
-Each result is written up with the **mistakes that led to the fix**, so the reasoning is reproducible, not just the recipe.
+## 3. The story: from registers to the install image
 
-## What's inside
+Rooting this box was not one clean exploit; it was a week of dead-ends, and the dead-ends are the most useful part to pass on.
 
-- **[`docs/`](docs)** - the technical write-ups (English; Vietnamese RE notes in [`docs/vi/`](docs/vi)):
-  [hardware ID](docs/01-hardware-id.md) · [rooting + the `add_sum` fix](docs/02-rooting.md) · [keystone/display RE](docs/03-keystone-display.md) · [debloat & BadBox removal](docs/04-debloat-security.md) · [post-root customization](docs/05-post-root.md).
-- **[`scripts/`](scripts)** - the rooted-image build script (`build_rooted_minimal.py`), SoC-analysis helpers, and the debloat-restore script.
-- **[`launcher-mods/`](launcher-mods)** - a patch (and copies) of the custom home screen, on top of [Gathin23/cleanyourtv](https://github.com/Gathin23/cleanyourtv).
-- **[`hub-app/`](hub-app)** - source of `com.hy300.hub`, the consolidated settings/keystone/casting launcher.
-- **[`magisk-module/`](magisk-module)** - `hy300tweaks`: neutralize the backdoor + force the custom launcher as HOME.
-- **[`assets/`](assets)** - boot logo and screenshots.
+**The wall.** Every public tool for these projectors - sunxi-fel, U-Boot, the root guides - targets the **H713 (`sun50iw12`, FEL `0x1860`)**. This unit answered FEL with `soc=00001911(unknown)`: a *newer* SoC, `sun50iw15`, with no BSP, no FEL port, no U-Boot anywhere. The usual commands connected and then simply hung.
 
-> **Not included (by design):** the ~2.2 GB rooted image, the stock firmware, and any proprietary APK / `.so` / vendor binary. GitHub can't host them and they aren't ours to redistribute - the build script reproduces the image from stock firmware instead, and every binary is linked to its source. See [License](#license).
+**Down at the register level.** So the first days were spent one register at a time. Scripts in [`scripts/`](scripts) scanned the BootROM for the **RVBAR** reset-vector address, disassembled the mask ROM looking for the **RMR** write that flips the core between AArch32 and AArch64, and hunted the load address the SoC expects for the first-stage **`fes1`** blob. Every H713 constant was tried and every one hung on an "unexpected `SCTLR`". The breakthrough at this layer was small and specific: the stock **`fes1.fex` loads to SRAM `0x0010C000`**, and the vendor U-Boot has an ARM32 self-switching head, so it needs **no** external RVBAR jump at all - the very thing the H713 flow forces, and the reason it kept hanging. With that, FEL finally brought up DRAM and ran a bootloader.
 
-## Compatibility
+**The real blocker was not a register - it was the install image.** With a way in, the plan was simple: patch Magisk into `init_boot`, flash, done. PhoenixSuit rejected every image with a flat *"firmware file is valid"* error. Hex-editing the `IMAGEWTY` in place - `init_boot`, `vbmeta`, `dlinfo`, `sys_partition` - only made it worse. The container keeps **per-partition `add_sum` verify-files**: a tiny `V<name>.fex` holding a `u32` checksum (pad to x4, sum every little-endian word). Change a payload and that checksum no longer matches, so the flasher refuses the whole image. The fix that finally produced root was to stop editing in place and instead **swap whole payloads and recompute their verify-files** - a byte-for-byte copy of stock with only the Magisk `init_boot` and a verity-off `vbmeta` replaced, and their two `add_sum` checksums rewritten. PhoenixSuit accepted it; `su` returned `uid=0`.
+
+**After root, the work turned inward.** Root was the means, not the end. The same decompile-and-probe habit went into the **display stack**: tracing why auto-keystone kept skewing led through two separate keystone code paths and a gravity-sensor sign bug, and ended at a one-line realization about device orientation (Section 5 links the write-up). The same curiosity found a **setuid-root backdoor** sitting in `/system/xbin` and the fake Play Store next to it. And then the fun part - rebuilding the home screen into something worth looking at.
+
+Each of those threads has its own write-up in the [Documentation Index](#5-documentation-index), with the mistakes left in.
+
+## 4. Results & Milestones
+
+- [x] **Root** on H726 / sun50iw15 - `adb shell su` returns `uid=0(root) ... u:r:magisk:s0`. To our knowledge the **first publicly documented** root of this SoC in an HY300-class projector.
+- [x] **Enabling discovery:** fixing the per-partition **`add_sum` verify-file checksum** so PhoenixSuit accepts a minimal-diff Magisk image.
+- [x] **Auto-keystone fixed definitively** - root-caused to device orientation + projection mode, not any property; after one calibration the image re-squares at any tilt and survives reboot.
+- [x] **Keystone / auto-keystone / autofocus subsystem reverse-engineered** - two separate keystone paths, the gravity-sensor z-axis sign bug, the real baseline store (`set_angle_offset` -> `/oem/gsensor_data`), plus a full H726-vs-H713 difference table.
+- [x] **BadBox 2.0 neutralized** - removed the fake `com.android.vending` (Tubesky), OTA droppers and telemetry, and masked the `/system/xbin/hotacksu` setuid-root backdoor persistently.
+- [x] **Post-root customization** - custom home screen (weather, second time zone, Vietnamese lunar date, photo-frame screensaver, three-column header), a consolidated "Hub" settings app, boot logo, timezone.
+- [ ] **Open:** AirScreen for AirPlay; Private DNS ad-block; board teardown for IC-level specs; clean sunxi-fel / U-Boot port for sun50iw15.
+
+## 5. Documentation Index
+
+### [Hardware & rooting](docs/02-rooting.md)
+Identifying the board and getting Magisk onto it:
+- **[Hardware ID](docs/01-hardware-id.md):** chip identifiers, device aliases, FEL entry, H726-vs-H713 check.
+- **[Rooting method](docs/02-rooting.md):** FEL + PhoenixSuit + the `add_sum` verify-file checksum fix.
+- **[build_rooted_minimal.py](scripts/build_rooted_minimal.py):** builds the minimal-diff rooted image from stock firmware; SoC helpers alongside it (`find_fes1_addr.py`, `find_rmr.py`, `scan_rvbar.py`).
+
+### [Reverse-engineering](docs/03-keystone-display.md)
+Display and keystone internals of the H726:
+- **[Keystone / display subsystem](docs/03-keystone-display.md):** the two keystone paths, the gsensor z-sign gotcha, baseline storage, projection-mode control, and the H726-vs-H713 table.
+
+### [Security](docs/04-debloat-security.md)
+Removing the BadBox-family malware:
+- **[Debloat & BadBox removal](docs/04-debloat-security.md):** fake Play Store / Tubesky, OTA droppers, telemetry, and the `hotacksu` setuid-root backdoor.
+- **[hy300tweaks (Magisk module)](magisk-module/hy300tweaks):** neutralize the backdoor on boot + force the custom launcher as HOME.
+- **[restore-projector.ps1](scripts/restore-projector.ps1):** reverse the debloat (reinstall for user 0).
+
+### [Customization](docs/05-post-root.md)
+Rebuilding the software to taste:
+- **[Post-root setup](docs/05-post-root.md):** launcher, Hub app, boot logo, timezone, recommended 32-bit apps.
+- **[launcher-mods](launcher-mods):** the custom home-screen patch over [Gathin23/cleanyourtv](https://github.com/Gathin23/cleanyourtv).
+- **[hub-app](hub-app):** `com.hy300.hub`, the consolidated settings / keystone / casting launcher.
+
+Vietnamese reverse-engineering notes are in [`docs/vi/`](docs/vi).
+
+## 6. Compatibility
 
 **Is this your device?**
 
-
-| | This repo (**H726**) | Not this repo (**H713**) |
+| | This repository (**H726**) | Not this repository (**H713**) |
 |---|---|---|
-| SoC | `sun50iw15p1` (H726) | `sun50iw12` (H713) |
-| FEL SoC id | **`0x1911`** | `0x1860` |
+| SoC | `sun50iw15p1` (H726) | `sun50iw12p1` (H713) |
+| FEL SoC id | `0x1911` | `0x1860` |
 | Display pipeline | DRM/KMS direct (no MIPS) | MIPS co-processor (`display.bin`) |
 | Gravity sensor | MPU-6880 | SC7A20 |
 
 **Check yours:** `adb shell getprop ro.hardware` should print `sun50iw15p1`; in FEL mode `sunxi-fel version` should print `soc=00001911`. Full method: [docs/01](docs/01-hardware-id.md).
 
-If you see `sun50iw12` / `0x1860`, this is an **H713** - use the projects this work is built on instead: [probonopd/hy310-deshittify](https://github.com/probonopd/hy310-deshittify), [YuujiLab/HY300-H713-Research](https://github.com/YuujiLab/HY300-H713-Research), and the [H713 XDA thread](https://xdaforums.com/t/beta-android-tv-and-root-tutorial-for-allwinner-h713-based-projectors.4744020/).
+If you see `sun50iw12` / `0x1860`, this is an **H713** - use the projects this work is built on instead: [YuujiLab/HY300-H713-Research](https://github.com/YuujiLab/HY300-H713-Research), [probonopd/hy310-deshittify](https://github.com/probonopd/hy310-deshittify), and the [H713 XDA thread](https://xdaforums.com/t/beta-android-tv-and-root-tutorial-for-allwinner-h713-based-projectors.4744020/).
 
-## Disclaimer
+## 7. Disclaimer & Liability
 
-> **Use at your own risk.** Flashing an Allwinner device can **brick** it; you are responsible for your own hardware, and there is no warranty. This is for the **H726 only** (see Compatibility). The stock firmware is a white-label clone historically tied to the **BigDroidOS / Bigpanzi** family and flagged with **BadBox 2.0**; this repo shows how that was found and neutralized, but a cloned firmware can never be fully trusted - **do not sign into personal, banking or Google accounts on it, and keep it network-isolated.** No proprietary firmware, APKs or vendor libraries are redistributed here.
+- **User Responsibility.** Flashing an Allwinner device can permanently **brick** it. You alone are responsible for your hardware and for complying with local law.
+- **No Warranty.** This material is provided "as is", without warranty or support of any kind.
+- **H726 Only.** These procedures target the H726 (`sun50iw15` / `0x1911`). Do **not** apply them to an H713 or any other SoC (see Section 6).
+- **Malware Notice.** The stock firmware is a white-label clone historically tied to **BigDroidOS / Bigpanzi** and flagged with **BadBox 2.0**. This repo shows how that was found and neutralized, but a cloned firmware can never be fully trusted: do **not** sign into personal, banking or Google accounts on it, and keep it network-isolated.
+- **No Redistribution.** No proprietary firmware, APKs or vendor libraries are included here; only original work is. Firmware is linked to its source, not hosted.
 
-## Getting started
-
-1. [Hardware ID](docs/01-hardware-id.md) - confirm your chip; learn the device aliases and how to enter FEL.
-2. [Rooting](docs/02-rooting.md) - FEL + PhoenixSuit + the `add_sum` verify-file fix; build your image with [`scripts/build_rooted_minimal.py`](scripts/build_rooted_minimal.py).
-3. [Debloat & security](docs/04-debloat-security.md) - remove bloat and neutralize the backdoor ([`magisk-module/hy300tweaks`](magisk-module/hy300tweaks)).
-4. [Keystone & display](docs/03-keystone-display.md) - fix auto-keystone (orientation + projection mode + calibration).
-5. [Post-root customization](docs/05-post-root.md) - the custom launcher ([`launcher-mods/`](launcher-mods)) and Hub app ([`hub-app/`](hub-app)).
-
-## Acknowledgments
+## 8. Acknowledgments & References
 
 This work builds on, and is grateful to:
 
 - the **XDA H726 rooting guide** - [*Rooting tutorial for a Magcubic HY300 Pro (Allwinner H726, Android 14)*](https://xdaforums.com/t/guide-rooting-tutorial-for-a-magcubic-hy300-pro-with-an-allwinner-h726-and-android-14.4776519/);
-- the **H713 research foundation** - [probonopd/hy310-deshittify](https://github.com/probonopd/hy310-deshittify), [YuujiLab/HY300-H713-Research](https://github.com/YuujiLab/HY300-H713-Research), well0nez's sunxi-tools / Linux port and keystone model, [gniax/magcubic-hy300-root](https://github.com/gniax/magcubic-hy300-root);
+- the **H713 research base** - [YuujiLab/HY300-H713-Research](https://github.com/YuujiLab/HY300-H713-Research), [probonopd/hy310-deshittify](https://github.com/probonopd/hy310-deshittify), well0nez's sunxi-tools / Linux port and keystone model, [gniax/magcubic-hy300-root](https://github.com/gniax/magcubic-hy300-root), [schaumann-byte/hy300-projector-homeassistant](https://github.com/schaumann-byte/hy300-projector-homeassistant);
 - the **BadBox removal reference** - [maximilian-sh/hy350max-badbox-removal](https://github.com/maximilian-sh/hy350max-badbox-removal);
-- and **[Claude](https://www.anthropic.com/claude) (Anthropic's AI), used as a research assistant** throughout.
-
-The new work here - the `add_sum` root path, the keystone/display reverse-engineering, the BadBox teardown and the post-root setup - was developed on top of those. Claude assisted as a tool; it is **not** a git co-author. The human (repository owner) made the decisions, took the risks, and ran the hardware.
-
-## Lessons - mistakes that taught the method
-
-- **Hex-editing the IMAGEWTY in place fails** - the container keeps per-partition `add_sum` checksums; swap a payload and you must recompute its verify-file, or PhoenixSuit rejects the flash. *This was the key to root.*
-- **There are two keystone paths** - auto (gsensor → display engine, never touches `persist.htc.keystone.*`) and manual (the `htc.keystone` props). Writing manual values while auto is on gets overwritten - why they only "sometimes" stuck.
-- **The "inverted trapezoid" was orientation, not a prop** - mounting the cylinder logo-down (gsensor `z < 0`) forces the firmware's "ceiling" branch, which inverts the correction and refuses a baseline. Logo-up (`z > 0`) just works.
-- **`persist.sys.panelvalue` is only a UI cache** - `setprop` + reboot does not flip the image; you must call `factorySetPanelValue`.
-- **Magisk magic-mount is broken on this firmware** - `system/` overlays don't apply; use `/oem`, direct partition writes or `service.d`.
-
-## Repository layout
-
-```
-docs/            Technical write-ups (English; Vietnamese originals in docs/vi/)
-scripts/         Rooted-image build + SoC analysis helpers (Python) + restore (PowerShell)
-launcher-mods/   Patch + files for the custom home screen (on top of Gathin23/cleanyourtv)
-hub-app/         "Hub" app source (com.hy300.hub)
-magisk-module/   hy300tweaks - neutralize the hotacksu backdoor + force the launcher as HOME
-assets/          Boot logo + screenshots
-```
-
-## References
+- and **[Claude](https://www.anthropic.com/claude) (Anthropic's AI), used as a research assistant** throughout. Claude assisted as a tool and is **not** a git co-author; the repository owner made the decisions, took the risks and ran the hardware.
 
 **Guides** - [H726 root (XDA)](https://xdaforums.com/t/guide-rooting-tutorial-for-a-magcubic-hy300-pro-with-an-allwinner-h726-and-android-14.4776519/) · [H713 root (XDA)](https://xdaforums.com/t/beta-android-tv-and-root-tutorial-for-allwinner-h713-based-projectors.4744020/)
-
-**H713 research (foundation)** - [probonopd/hy310-deshittify](https://github.com/probonopd/hy310-deshittify) · [YuujiLab/HY300-H713-Research](https://github.com/YuujiLab/HY300-H713-Research) · [gniax/magcubic-hy300-root](https://github.com/gniax/magcubic-hy300-root) · [schaumann-byte/hy300-projector-homeassistant](https://github.com/schaumann-byte/hy300-projector-homeassistant) · well0nez (sunxi-tools H713 fork + `allwinner-h713-linux`, keystone model)
-
-**Security** - [maximilian-sh/hy350max-badbox-removal](https://github.com/maximilian-sh/hy350max-badbox-removal)
-
 **Tools** - [Magisk](https://github.com/topjohnwu/Magisk) · [sunxi-tools](https://github.com/linux-sunxi/sunxi-tools) · [OpenixSuit](https://github.com/YuzukiTsuru/OpenixSuit) · [imagewty-tool](https://github.com/uictorius/imagewty-tool) · [MagiskPatcher](https://circlecashteam.github.io/MagiskPatcher/) · [jadx](https://github.com/skylot/jadx) (Apache-2.0) · PhoenixSuit (Allwinner)
-
 **Post-root software** - [cleanyourtv launcher](https://github.com/Gathin23/cleanyourtv) (MIT) · [SmartTube](https://github.com/yuliskov/SmartTube) · [Material Files](https://github.com/zhanghai/MaterialFiles) · Aurora Store · [Lucide icons](https://github.com/lucide-icons/lucide) · [Open-Meteo](https://open-meteo.com) · Outfit font (OFL)
+**Firmware** (linked, not redistributed) - androidpctv.com · magcubic-support.com. Launcher-theme wallpaper photos are CC-BY / CC-BY-SA / CC0 by their authors (see the theme's `CREDITS.md` upstream).
 
-**Firmware** (linked, not redistributed) - androidpctv.com · magcubic-support.com. Wallpaper photos shipped by the launcher theme are CC-BY / CC-BY-SA / CC0 by their authors; see the theme's `CREDITS.md` upstream.
-
-## License
+## 9. License
 
 [MIT](LICENSE) for the original work in this repository. It does **not** cover the upstream projects (each keeps its own license) or any proprietary vendor firmware / APKs / libraries, which are **not** included here. See the scope note in [LICENSE](LICENSE).
+
+---
 
 *Not affiliated with Allwinner, Magcubic, Gojodoq, Google or Anthropic.*
