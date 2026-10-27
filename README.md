@@ -19,6 +19,10 @@
 
 <sub>Left: the rebuilt home screen (weather, second clock, lunar date, photo-frame screensaver). Right: the "Hub" app that gathers the scattered vendor settings (keystone, focus, casting, Wi-Fi, developer options) into one screen.</sub>
 
+<img src="assets/screenshots/settings-stock-blue.png" width="400" alt="Stock settings, harsh blue"> <img src="assets/screenshots/settings-dark.png" width="400" alt="Settings after dark theming">
+
+<sub>The vendor settings UI, before and after: a dark 1280x720 image dropped in place of the shared background bitmap recolors every MagcubicOS screen at once, with no overlay and no repackaging (see [docs/05](docs/05-post-root.md#dark-theming-the-vendor-settings-no-overlay-no-repackage)).</sub>
+
 </div>
 
 ---

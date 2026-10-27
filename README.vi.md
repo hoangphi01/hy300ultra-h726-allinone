@@ -19,6 +19,10 @@
 
 <sub>Trái: màn hình chính dựng lại (thời tiết, đồng hồ thứ hai, âm lịch, screensaver khung tranh). Phải: app "Hub" gom các cài đặt rải rác của hãng (keystone, lấy nét, casting, Wi-Fi, developer) vào một màn.</sub>
 
+<img src="assets/screenshots/settings-stock-blue.png" width="400" alt="Settings gốc, xanh chói"> <img src="assets/screenshots/settings-dark.png" width="400" alt="Settings sau khi dark theme">
+
+<sub>Giao diện settings của hãng, trước và sau: thả một ảnh tối 1280x720 thay cho bitmap nền dùng chung là đổi màu mọi màn MagcubicOS cùng lúc, không overlay, không đóng gói lại (xem [docs/05](docs/05-post-root.md#dark-theming-the-vendor-settings-no-overlay-no-repackage)).</sub>
+
 </div>
 
 ---
