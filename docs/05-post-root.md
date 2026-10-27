@@ -40,7 +40,7 @@ This SoC is 32-bit (`armeabi-v7a`); 64-bit-only APKs and the Play-certified YouT
 - **[Aurora Store](https://f-droid.org/packages/com.aurora.store/)** - anonymous Play downloads (no Google account).
 - **[SmartTube](https://github.com/yuliskov/SmartTube)** - ad-free YouTube; pick an AVC (H.264) <= 1080p preset to dodge slow VP9/AV1 software decode.
 - **[Material Files](https://github.com/zhanghai/MaterialFiles)** - light FOSS file manager (replaces the adware stock / ES explorer).
-- **AirScreen** (via Aurora) - if the stock AirPlay (`com.mphotool.airplay`) stays broken.
+- **Screen mirroring receiver** - if the stock AirPlay (`com.mphotool.airplay`) stays broken. Prefer a free, ad-free one: [PhairPlay](https://github.com/mazer666/PhairPlay) (AirPlay 2 / Miracast / DLNA; its APK ships `armeabi-v7a`, so it runs on this 32-bit SoC) or [iMirror](https://github.com/prat3ik/iMirror) (AirPlay only, more mature). Avoid AirScreen: it gates use behind a Pro-registration nag. For YouTube, do not cast at all; YouTube only casts to certified receivers, so watch it natively with SmartTube and its "Link with TV code" remote.
 
 ## 6. zram
 

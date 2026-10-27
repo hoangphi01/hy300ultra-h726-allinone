@@ -19,3 +19,17 @@ fi
   sleep 1
   am start -n com.gathin.tvhome/.MainActivity
 ) &
+
+# (3) Optional: autostart a screen-mirroring receiver after boot (here PhairPlay, a
+#     free, ad-free AirPlay / Miracast / DLNA receiver used in place of AirScreen).
+#     The app has its own BOOT_COMPLETED receiver, but the firmware task-killer (awbms)
+#     can drop it, so start it here as a backup. Service only, so no UI covers the home
+#     screen. Remove this block, or change the component, if you do not use PhairPlay.
+(
+  while [ "$(getprop sys.boot_completed)" != "1" ]; do
+    sleep 1
+  done
+  # wait for Wi-Fi to come up (the receiver needs the network to advertise)
+  sleep 15
+  am start-foreground-service -n com.phairplay.googletv/com.phairplay.service.PhairPlayService 2>/dev/null
+) &

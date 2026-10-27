@@ -3,4 +3,4 @@ name=HY300 Ultra (H726) Post-Root Tweaks
 version=v1.0
 versionCode=1
 author=hoangphi01
-description=Neutralizes the /system/xbin/hotacksu setuid-root backdoor (bind-mounts an empty 000 file over it) and brings a custom launcher forward at boot (stock firmware hard-forces com.htc.magcubicos as HOME). Edit the launcher package in service.sh before installing.
+description=Neutralizes the /system/xbin/hotacksu setuid-root backdoor (bind-mounts an empty 000 file over it), brings a custom launcher forward at boot (stock firmware hard-forces com.htc.magcubicos as HOME), and optionally autostarts a screen-mirroring receiver (PhairPlay) after boot. Edit the launcher and receiver packages in service.sh before installing.
