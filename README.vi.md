@@ -15,7 +15,9 @@
 ![Affiliation](https://img.shields.io/badge/affiliation-none-lightgrey)
 [![Downloads](https://img.shields.io/badge/Downloads-MEGA-D9272E)](https://mega.nz/folder/5UgxwQiS#EcKh5wCWni6yjOcDvCLXvQ)
 
-<img src="assets/screenshots/home-3col.png" width="680" alt="Màn hình chính tùy biến">
+<img src="assets/screenshots/home-3col.png" width="400" alt="Màn hình chính tùy biến"> <img src="assets/screenshots/hub-app.png" width="400" alt="Hub: điều khiển và cài đặt máy chiếu gom một chỗ">
+
+<sub>Trái: màn hình chính dựng lại (thời tiết, đồng hồ thứ hai, âm lịch, screensaver khung tranh). Phải: app "Hub" gom các cài đặt rải rác của hãng (keystone, lấy nét, casting, Wi-Fi, developer) vào một màn.</sub>
 
 </div>
 

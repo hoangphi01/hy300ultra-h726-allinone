@@ -15,7 +15,9 @@
 ![Affiliation](https://img.shields.io/badge/affiliation-none-lightgrey)
 [![Downloads](https://img.shields.io/badge/Downloads-MEGA-D9272E)](https://mega.nz/folder/5UgxwQiS#EcKh5wCWni6yjOcDvCLXvQ)
 
-<img src="assets/screenshots/home-3col.png" width="680" alt="Custom home screen">
+<img src="assets/screenshots/home-3col.png" width="400" alt="Custom home screen"> <img src="assets/screenshots/hub-app.png" width="400" alt="Hub: projector controls and settings in one place">
+
+<sub>Left: the rebuilt home screen (weather, second clock, lunar date, photo-frame screensaver). Right: the "Hub" app that gathers the scattered vendor settings (keystone, focus, casting, Wi-Fi, developer options) into one screen.</sub>
 
 </div>
 
