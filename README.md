@@ -13,12 +13,15 @@
 ![Root](https://img.shields.io/badge/root-Magisk-success)
 ![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
 ![Affiliation](https://img.shields.io/badge/affiliation-none-lightgrey)
+[![Downloads](https://img.shields.io/badge/Downloads-MEGA-D9272E)](https://mega.nz/folder/5UgxwQiS#EcKh5wCWni6yjOcDvCLXvQ)
 
 <img src="assets/screenshots/home-3col.png" width="680" alt="Custom home screen">
 
 </div>
 
 ---
+
+> **Downloads (prebuilt):** the rooted image, the stock firmware (for unbrick) and the APKs are mirrored on **[MEGA](https://mega.nz/folder/5UgxwQiS#EcKh5wCWni6yjOcDvCLXvQ)** - H726 only; verify the SHA256 listed in the folder. You can flash them directly instead of building, see [02. Rooting](docs/02-rooting.md).
 
 ## 1. Overview
 

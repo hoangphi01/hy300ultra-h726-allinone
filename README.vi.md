@@ -13,12 +13,15 @@
 ![Root](https://img.shields.io/badge/root-Magisk-success)
 ![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
 ![Affiliation](https://img.shields.io/badge/affiliation-none-lightgrey)
+[![Downloads](https://img.shields.io/badge/Downloads-MEGA-D9272E)](https://mega.nz/folder/5UgxwQiS#EcKh5wCWni6yjOcDvCLXvQ)
 
 <img src="assets/screenshots/home-3col.png" width="680" alt="Màn hình chính tùy biến">
 
 </div>
 
 ---
+
+> **Tải về (bản dựng sẵn):** image đã root, firmware stock (để unbrick) và các APK được mirror trên **[MEGA](https://mega.nz/folder/5UgxwQiS#EcKh5wCWni6yjOcDvCLXvQ)** - chỉ cho H726; nhớ verify SHA256 ghi trong folder. Có thể flash thẳng khỏi cần build, xem [02. Rooting](docs/02-rooting.md).
 
 ## 1. Tổng quan
 
