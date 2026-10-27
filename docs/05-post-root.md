@@ -26,6 +26,11 @@ Apply it (see [`../launcher-mods/README.md`](../launcher-mods/README.md)): clone
 
 The Hub also carries its own dark-Material **About screen** (`AboutActivity`) that replaces MagcubicOS's harsh blue one: the same device info in rounded cards, read from system properties and standard APIs, with no software-update rows. It is the first step of moving the user-facing settings onto a consistent Material surface (the vendor projector/keystone screens have no Android equivalent and stay as they are; generic ones like Wi-Fi/Bluetooth can deep-link to Android's own Material settings).
 
+<p align="center">
+<img src="../assets/screenshots/hub-app.png" width="420" alt="Hub tiles">
+<img src="../assets/screenshots/hub-about.png" width="420" alt="Hub Material About screen">
+</p>
+
 ### Hiding the OTA update rows (no app patching)
 
 MagcubicOS's About screen shows two update rows ("software update" and "online update") that launch the already-removed `com.htc.htcotaupdate` / `com.softwinner.update`. Rather than repackage the system settings app, hide them through its own config: the launcher reads `/oem/shortcuts.config` (a writable vfat, preferred over `/system/shortcuts.config`) as JSON, and each About row's visibility is a boolean there. Set `"updateFirmware": false` and `"onlineUpdate": false` (keep a `.bak`), then `am force-stop com.htc.magcubicos` to reload. The same file also filters apps from the launcher and the app manager.
