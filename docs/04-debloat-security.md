@@ -17,9 +17,9 @@ The stock firmware is a white-label clone historically tied to **BigDroidOS / Bi
 
 ## 3. Neutralizing the `hotacksu` backdoor
 
-### Why not just remount `/system` read/write and delete it?
+### You cannot remove it on the live device
 
-On an older ext4 `/system` that is exactly the right move, and it is the first thing most people try. It does not work here. On this Android 14 build `/system` lives inside `/` on a **device-mapper logical partition** (dynamic partitions packed into `super`), mounted ext4 **read-only at the block layer**. The remount is refused by the block device itself, before the filesystem is even consulted:
+On an older ext4 `/system` you would remount read/write and `rm` the file. That does not work here. On this Android 14 build `/system` lives inside `/` on a **device-mapper logical partition** (dynamic partitions packed into `super`), mounted ext4 **read-only at the block layer**. The remount is refused by the block device itself, before the filesystem is even consulted:
 
 ```sh
 # getprop ro.hardware
@@ -30,11 +30,13 @@ sun50iw15p1
 '/dev/block/dm-0' is read-only
 ```
 
-Even with verity disabled for boot, the logical partitions in `super` are exposed read-only by `dm`, so `mount -o rw,remount` fails. To actually `rm` the file you would have to make that logical partition writable (overlayfs / `adb remount`, which needs spare space in `super`), and note `dm-0` also backs every `/apex` mount, so it is the whole system+apex image you would be touching. That is far more invasive and fragile than a systemless mask.
+Even with verity disabled for boot, the logical partitions in `super` are exposed read-only by `dm`, and `dm-0` also backs every `/apex` mount, so there is no live partition to edit in place.
 
-### The systemless mask
+### Two valid approaches
 
-Instead **bind-mount an empty, non-executable file over it** (as root, in the global mount namespace, so the mask propagates to every process):
+The backdoor is only useful to a non-root process: a normal app execs the setuid `hotacksu` to become root. Both approaches below close that path; they differ in where the risk sits, so the choice is a matter of preference.
+
+**A. Systemless mask (bind-mount).** Cover the file with an empty, non-executable file, as root, in the global mount namespace, so the mask propagates to every process:
 
 ```sh
 printf '' > /dev/.hk_block
@@ -42,14 +44,32 @@ chmod 000 /dev/.hk_block
 mount -o bind /dev/.hk_block /system/xbin/hotacksu
 ```
 
-After this, any process that tries to `exec` the backdoor gets *Permission denied*, and the entry reads as a 0-byte `000` file:
+Any process that then tries to `exec` the backdoor gets *Permission denied*, and the entry reads as a 0-byte `000` file:
 
 ```sh
 # ls -lZ /system/xbin/hotacksu
 ---------- 1 root root u:object_r:device:s0 0 /system/xbin/hotacksu
 ```
 
-This is reversible (nothing on the real partition is ever written, so there is no chance of a bad write bricking boot) and keeps the AVB state clean. Make it **persistent across reboot** with the Magisk module in [`../magisk-module/hy300tweaks`](../magisk-module/hy300tweaks) (its `service.sh` does the bind-mount on boot).
+Make it persistent with the Magisk module in [`../magisk-module/hy300tweaks`](../magisk-module/hy300tweaks); its `service.sh` re-applies the bind-mount on boot.
+
+**B. Offline removal and reflash.** Extract the system image, mount it read/write on a PC, delete the file, then repack and reflash. Because `/system` is a logical partition inside `super` and the Allwinner `IMAGEWTY` keeps a per-partition `add_sum` verify-file, this means repacking `super`, keeping `vbmeta` verity-disabled, and recomputing the verify-file, or PhoenixSuit rejects the whole image with "firmware file is valid" (see [02. Rooting](02-rooting.md)).
+
+### Choosing between them
+
+| | A. Systemless mask | B. Offline delete + reflash |
+|---|---|---|
+| End state | file masked (bytes remain underneath) | file physically removed |
+| Writes to the partition | none | yes (repack + reflash) |
+| Reversible | yes (remove the module) | no |
+| Flash required | no | yes (`super` + `vbmeta`, over FEL) |
+| If it goes wrong | device still boots | non-booting until recovered by reflashing stock over FEL |
+| Extra work | none | repack `super`, keep verity off, recompute `add_sum` |
+| Holds without Magisk | no (re-applied each boot) | yes |
+
+Within the threat model the two are equivalent. Reaching the bytes under the mask already requires root, at which point the backdoor is moot, so approach A leaves no usable escalation path; it is the standard systemless model (nothing is written to the partition, so it cannot brick and is fully reversible). Approach B removes the file permanently at the cost of a real flash path. On a unit that is already rooted and configured, approach A avoids redoing root and customization to erase a file that already cannot execute.
+
+> Either way this is a cloned firmware. Masking or removing one file does not make it trustworthy: keep the device network-isolated and do not sign into personal accounts (Section 5).
 
 Notes:
 - `/vendor/etc/awbms_config` whitelists the `com.hotack` namespace from the task-killer (persistence). That same `hotack` namespace is used by the vendor for **both** keystone (`hotack.vaf.*`, `android.intent.hotack_keystone`) **and** the malware, so do not blanket-kill it.
